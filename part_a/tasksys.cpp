@@ -10,7 +10,12 @@ ITaskSystem::~ITaskSystem() {}
 
 void * runTaskWrapper(void * args) {
     TaskArgs * taskArgs = (TaskArgs *) args;
-    (taskArgs->runnable)->runTask(taskArgs->task_id, taskArgs->num_total_tasks);
+    int task_id = taskArgs->task_id;
+    int num_total_tasks = taskArgs->num_total_tasks;
+    int num_threads = taskArgs->num_threads;
+    for (int i = task_id; i < num_total_tasks; i += num_threads) {
+      (taskArgs->runnable)->runTask(task_id, num_total_tasks);
+    }
     return NULL;
 }
 
@@ -83,6 +88,7 @@ void TaskSystemParallelSpawn::run(IRunnable* runnable, int num_total_tasks) {
         args[i].runnable = runnable;
         args[i].task_id = i;
         args[i].num_total_tasks = num_total_tasks;
+        args[i].num_threads = num_threads;
         pthread_create(&threads[i], NULL, runTaskWrapper, &args[i]);
     }
     // runnable->runTask(0, num_total_tasks);
