@@ -57,6 +57,15 @@ class TaskSystemParallelSpawn: public ITaskSystem {
  * documentation of the ITaskSystem interface.
  */
 class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
+
+    private:
+        // Queue - some c++ object
+
+
+        // Vars for thread pool
+        pthread_t *_thread_pool;
+        int _num_threads;
+
     public:
         TaskSystemParallelThreadPoolSpinning(int num_threads);
         ~TaskSystemParallelThreadPoolSpinning();

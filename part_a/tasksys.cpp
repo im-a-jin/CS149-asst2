@@ -6,7 +6,7 @@ IRunnable::~IRunnable() {}
 ITaskSystem::ITaskSystem(int num_threads) {}
 ITaskSystem::~ITaskSystem() {}
 
-void * runTaskWrapper(void * args) {
+void * runTaskWrapperA1(void * args) {
     TaskArgs * taskArgs = (TaskArgs *) args;
     int thread_id = taskArgs->thread_id;
     int num_total_tasks = taskArgs->num_total_tasks;
@@ -15,6 +15,22 @@ void * runTaskWrapper(void * args) {
       (taskArgs->runnable)->runTask(i, num_total_tasks);
     }
     return NULL;
+}
+
+void * runTaskWrapperA2(void * args) {
+    // while True {
+
+        // lock mutex
+            // default isRunning to off
+            // is there anything on the queue?
+                // switch my isRunning on (threadId indexed)
+                // yes: pop it and hold on to the var (locally)
+        // unlock mutex
+
+        // if local var, runtask
+            // runtask
+    
+    // }
 }
 
 /*
@@ -87,7 +103,7 @@ void TaskSystemParallelSpawn::run(IRunnable* runnable, int num_total_tasks) {
         args[i].thread_id = i;
         args[i].num_total_tasks = num_total_tasks;
         args[i].num_threads = _num_threads;
-        pthread_create(&threads[i], NULL, runTaskWrapper, &args[i]);
+        pthread_create(&threads[i], NULL, runTaskWrapperA1, &args[i]);
     }
     // runnable->runTask(0, num_total_tasks);
 
@@ -127,9 +143,25 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
+
+    // Initialize threads - alloc memory
+    // Setup queue
+    // Setup "isRunning" array
+
+    // PThread create
+
 }
 
-TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {}
+TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {
+
+    // Join threads
+
+    // Free isRunning array
+
+    // Free thread pool
+
+
+}
 
 void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_total_tasks) {
 
@@ -140,9 +172,25 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
     // tasks sequentially on the calling thread.
     //
 
-    for (int i = 0; i < num_total_tasks; i++) {
-        runnable->runTask(i, num_total_tasks);
-    }
+    // Lock queue
+
+    // Pour everything into the queue
+    // for (int i = 0; i < num_total_tasks; i++) {
+    //     runnable->runTask(i, num_total_tasks);
+    // }
+
+    // Unlock queue
+
+    // While true
+        // Lock mutex
+
+        // Is the queue empty?
+        // AND is nobody running anything?
+            // If so, break
+
+        // Unlock mutex
+
+
 }
 
 TaskID TaskSystemParallelThreadPoolSpinning::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
