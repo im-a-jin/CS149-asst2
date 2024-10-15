@@ -5,7 +5,7 @@
 
 struct TaskArgs {
   IRunnable* runnable;
-  int task_id;
+  int thread_id;
   int num_total_tasks;
   int num_threads;
 };
