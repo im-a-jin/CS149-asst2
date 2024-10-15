@@ -88,7 +88,7 @@ void TaskSystemParallelSpawn::run(IRunnable* runnable, int num_total_tasks) {
         args[i].runnable = runnable;
         args[i].task_id = i;
         args[i].num_total_tasks = num_total_tasks;
-        args[i].num_threads = num_threads;
+        args[i].num_threads = _num_threads;
         pthread_create(&threads[i], NULL, runTaskWrapper, &args[i]);
     }
     // runnable->runTask(0, num_total_tasks);
