@@ -2,6 +2,8 @@
 #define _TASKSYS_H
 
 #include "itasksys.h"
+#include "pthread.h"
+#include "stdlib.h"
 
 struct TaskArgs {
   IRunnable* runnable;

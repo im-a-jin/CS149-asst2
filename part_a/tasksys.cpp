@@ -1,6 +1,4 @@
 #include "tasksys.h"
-#include "pthread.h"
-#include "stdlib.h"
 
 
 IRunnable::~IRunnable() {}
