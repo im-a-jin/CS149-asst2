@@ -9,6 +9,8 @@ struct TaskArgs {
   int num_total_tasks;
 };
 
+static void runTaskWrapper(TaskArgs * args);
+
 /*
  * TaskSystemSerial: This class is the student's implementation of a
  * serial task execution engine.  See definition of ITaskSystem in
@@ -34,7 +36,6 @@ class TaskSystemSerial: public ITaskSystem {
 class TaskSystemParallelSpawn: public ITaskSystem {
     private:
         int _num_threads;
-        void runTaskWrapper(TaskArgs * args);
 
     public:
         TaskSystemParallelSpawn(int num_threads);

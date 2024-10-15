@@ -8,6 +8,10 @@ IRunnable::~IRunnable() {}
 ITaskSystem::ITaskSystem(int num_threads) {}
 ITaskSystem::~ITaskSystem() {}
 
+void runTaskWrapper(TaskArgs * args) {
+    (args->runnable)->runTask(args->task_id, args->num_total_tasks);
+}
+
 /*
  * ================================================================
  * Serial task system implementation
@@ -62,10 +66,6 @@ TaskSystemParallelSpawn::TaskSystemParallelSpawn(int num_threads): ITaskSystem(n
 }
 
 TaskSystemParallelSpawn::~TaskSystemParallelSpawn() {}
-
-void TaskSystemParallelSpawn::runTaskWrapper(TaskArgs * args) {
-    (args->runnable)->runTask(args->task_id, args->num_total_tasks);
-}
 
 void TaskSystemParallelSpawn::run(IRunnable* runnable, int num_total_tasks) {
     //
