@@ -8,8 +8,8 @@ IRunnable::~IRunnable() {}
 ITaskSystem::ITaskSystem(int num_threads) {}
 ITaskSystem::~ITaskSystem() {}
 
-void runTaskWrapper(TaskArgs * args) {
-    (args->runnable)->runTask(args->task_id, args->num_total_tasks);
+void * runTaskWrapper(void * args) {
+    ((TaskArgs *) args->runnable)->runTask(args->task_id, args->num_total_tasks);
 }
 
 /*

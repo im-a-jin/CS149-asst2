@@ -9,7 +9,7 @@ struct TaskArgs {
   int num_total_tasks;
 };
 
-static void runTaskWrapper(TaskArgs * args);
+void* runTaskWrapper(void * args);
 
 /*
  * TaskSystemSerial: This class is the student's implementation of a
