@@ -64,8 +64,7 @@ TaskSystemParallelSpawn::TaskSystemParallelSpawn(int num_threads): ITaskSystem(n
 TaskSystemParallelSpawn::~TaskSystemParallelSpawn() {}
 
 void TaskSystemParallelSpawn::runTaskWrapper(TaskArgs * args) {
-    runnable = args->runnable;
-    runnable->runTask(args->task_id, args->num_total_tasks);
+    (args->runnable)->runTask(args->task_id, args->num_total_tasks);
 }
 
 void TaskSystemParallelSpawn::run(IRunnable* runnable, int num_total_tasks) {
