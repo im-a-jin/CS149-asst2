@@ -9,7 +9,8 @@ ITaskSystem::ITaskSystem(int num_threads) {}
 ITaskSystem::~ITaskSystem() {}
 
 void * runTaskWrapper(void * args) {
-    ((TaskArgs *) args->runnable)->runTask(args->task_id, args->num_total_tasks);
+    TaskArgs * taskArgs = (TaskArgs *) args;
+    (taskArgs->runnable)->runTask(taskArgs->task_id, taskArgs->num_total_tasks);
 }
 
 /*
