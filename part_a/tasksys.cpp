@@ -11,6 +11,7 @@ ITaskSystem::~ITaskSystem() {}
 void * runTaskWrapper(void * args) {
     TaskArgs * taskArgs = (TaskArgs *) args;
     (taskArgs->runnable)->runTask(taskArgs->task_id, taskArgs->num_total_tasks);
+    return NULL;
 }
 
 /*
