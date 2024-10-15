@@ -82,7 +82,7 @@ void TaskSystemParallelSpawn::run(IRunnable* runnable, int num_total_tasks) {
     //
 
     pthread_t *threads = (pthread_t *) malloc(_num_threads * sizeof(pthread_t));
-    TaskArgs * args = (TaskArgs *) malloc(_num_threads * sizeof(TaskArgs));
+    TaskArgs *args = (TaskArgs *) malloc(_num_threads * sizeof(TaskArgs));
 
     for (int i = 0; i < _num_threads; i++) {
         args[i].runnable = runnable;
@@ -96,6 +96,9 @@ void TaskSystemParallelSpawn::run(IRunnable* runnable, int num_total_tasks) {
     for (int i = 0; i < _num_threads; i++) {
         pthread_join(threads[i], NULL);
     }
+
+    free(threads);
+    free(args);
 }
 
 TaskID TaskSystemParallelSpawn::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
