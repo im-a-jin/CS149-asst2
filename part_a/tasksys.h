@@ -3,6 +3,12 @@
 
 #include "itasksys.h"
 
+struct TaskArgs {
+  IRunnable* runnable;
+  int task_id;
+  int num_total_tasks;
+};
+
 /*
  * TaskSystemSerial: This class is the student's implementation of a
  * serial task execution engine.  See definition of ITaskSystem in
@@ -26,6 +32,10 @@ class TaskSystemSerial: public ITaskSystem {
  * of the ITaskSystem interface.
  */
 class TaskSystemParallelSpawn: public ITaskSystem {
+    private:
+        int _num_threads;
+        void runTaskWrapper(TaskArgs * args);
+
     public:
         TaskSystemParallelSpawn(int num_threads);
         ~TaskSystemParallelSpawn();

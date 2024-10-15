@@ -1,4 +1,6 @@
 #include "tasksys.h"
+#include "pthread.h"
+#include "stdlib.h"
 
 
 IRunnable::~IRunnable() {}
@@ -55,21 +57,37 @@ TaskSystemParallelSpawn::TaskSystemParallelSpawn(int num_threads): ITaskSystem(n
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
+
+    _num_threads = num_threads;
 }
 
 TaskSystemParallelSpawn::~TaskSystemParallelSpawn() {}
 
+void TaskSystemParallelSpawn::runTaskWrapper(TaskArgs * args) {
+    runnable = args->runnable;
+    runnable->runTask(args->task_id, args->num_total_tasks);
+}
+
 void TaskSystemParallelSpawn::run(IRunnable* runnable, int num_total_tasks) {
-
-
     //
     // TODO: CS149 students will modify the implementation of this
     // method in Part A.  The implementation provided below runs all
     // tasks sequentially on the calling thread.
     //
 
-    for (int i = 0; i < num_total_tasks; i++) {
-        runnable->runTask(i, num_total_tasks);
+    pthread_t *threads = (pthread_t *) malloc(_num_threads * sizeof(pthread_t));
+    TaskArgs * args = (TaskArgs *) malloc(_num_threads * sizeof(TaskArgs));
+
+    for (int i = 0; i < _num_threads; i++) {
+        args[i].runnable = runnable;
+        args[i].task_id = i;
+        args[i].num_total_tasks = num_total_tasks;
+        pthread_create(&threads[i], NULL, runTaskWrapper, &args[i]);
+    }
+    // runnable->runTask(0, num_total_tasks);
+
+    for (int i = 0; i < _num_threads; i++) {
+        pthread_join(threads[i], NULL);
     }
 }
 
