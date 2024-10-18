@@ -210,8 +210,19 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
         pthread_mutex_lock(&_mutex_lock);
 
         // Is the queue empty?
-        // AND is nobody running anything?
+        if (_work_queue.empty()) {
+
+            // AND is nobody running anything?
+            bool any_running = false;
+            for (int i=0; i<_num_threads; i++) {
+                any_running &= _is_running[i];
+            }
+
             // If so, break
+            if (!any_running) {
+                break;
+            }
+        }
 
         // Unlock mutex
         pthread_mutex_unlock(&_mutex_lock);
