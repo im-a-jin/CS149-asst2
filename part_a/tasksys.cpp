@@ -143,24 +143,30 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
+    _num_threads = num_threads;
 
     // Initialize threads - alloc memory
-    // Setup queue
+    _thread_pool = (pthread_t *) malloc(_num_threads * sizeof(pthread_t));
+
     // Setup "isRunning" array
+    _is_running = (bool *) malloc(_num_threads * sizeof(bool));
 
     // PThread create
-
+    for (int i = 0; i < _num_threads; i++) {
+        pthread_create(&_thread_pool[i], NULL, runTaskWrapperA2, NULL);
+    }
 }
 
 TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {
-
     // Join threads
+    for (int i = 0; i < _num_threads; i++) {
+        pthread_join(_thread_pool[i], NULL);
+    }
 
-    // Free isRunning array
-
-    // Free thread pool
-
-
+    // Free memory
+    free(_is_running);
+    free(_thread_pool);
+    free(_thread_args);
 }
 
 void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_total_tasks) {
@@ -189,8 +195,6 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
             // If so, break
 
         // Unlock mutex
-
-
 }
 
 TaskID TaskSystemParallelThreadPoolSpinning::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,

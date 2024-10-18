@@ -59,11 +59,12 @@ class TaskSystemParallelSpawn: public ITaskSystem {
 class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
 
     private:
-        // Queue - some c++ object
-
+        // Work queue
+        std::queue<int> _work_queue;
+        bool * _is_running;
 
         // Vars for thread pool
-        pthread_t *_thread_pool;
+        pthread_t * _thread_pool;
         int _num_threads;
 
     public:
