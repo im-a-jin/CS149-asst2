@@ -1,6 +1,5 @@
 #include "tasksys.h"
 
-
 IRunnable::~IRunnable() {}
 
 ITaskSystem::ITaskSystem(int num_threads) {}
@@ -19,18 +18,37 @@ void * runTaskWrapperA1(void * args) {
 
 void * runTaskWrapperA2(void * args) {
     TaskArgsA2 *taskArgs = (TaskArgsA2 *) args;
+    RunTask cur_task, next_task;
+
     while (!*(taskArgs->done)) {
 
-        // lock mutex
-            // default isRunning to off
-            // is there anything on the queue?
-                // switch my isRunning on (threadId indexed)
-                // yes: pop it and hold on to the var (locally)
-        // unlock mutex
+        pthread_mutex_lock(taskArgs->mutex_lock);
+        // default isRunning to off
+        taskArgs->is_running[taskArgs->thread_id] = false;
+
+        // is there anything on the queue?
+        if (!taskArgs->work_queue->empty()) {
+            // switch my isRunning on (threadId indexed)
+            taskArgs->is_running[taskArgs->thread_id] = true;
+
+            // pop the queue and hold on to the var (locally)
+            cur_task = taskArgs->work_queue->front();
+            taskArgs->work_queue->pop();
+
+            // add 1 to taskId and push to queue
+            if (cur_task.task_id + 1 < cur_task.num_total_tasks) {
+                next_task = {cur_task.runnable, cur_task.task_id + 1, cur_task.num_total_tasks};
+                taskArgs->work_queue->push(next_task);
+            }
+
+        }
+
+        pthread_mutex_unlock(taskArgs->mutex_lock);
 
         // if local var, runtask
-            // runtask
-    
+        if (taskArgs->is_running[taskArgs->thread_id]) {
+            printf("Running task %d\n", cur_task.task_id);
+        }
     }
 
     return NULL;
@@ -160,20 +178,21 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
 
 
     // Setup args
-    _args = (TaskArgsA2 *)malloc(sizeof(TaskArgsA2));
-    _args->done = &_done;
-    _args->work_queue = &_work_queue;
-    _args->mutex_lock = &_mutex_lock;
+    _args = (TaskArgsA2 *)malloc(_num_threads*sizeof(TaskArgsA2));
 
     // PThread create
     for (int i = 0; i < _num_threads; i++) {
-        pthread_create(&_thread_pool[i], NULL, runTaskWrapperA2, _args);
+        _args[i].thread_id = i;
+        _args[i].is_running = _is_running;
+        _args[i].done = &_done;
+        _args[i].work_queue = &_work_queue;
+        _args[i].mutex_lock = &_mutex_lock;
+        pthread_create(&_thread_pool[i], NULL, runTaskWrapperA2, &_args[i]);
     }
 }
 
 TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {
 
-    printf("Cleaning up\n");
     _done = true;
 
     // Join threads
@@ -198,13 +217,15 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
 
     // Lock queue
 
-    // Pour everything into the queue
-    // for (int i = 0; i < num_total_tasks; i++) {
-    //     runnable->runTask(i, num_total_tasks);
-    // }
+    // Pour first task into queue
+    RunTask first_task = {runnable, 0, num_total_tasks};
+
+    pthread_mutex_lock(&_mutex_lock);
+    _work_queue.push(first_task);
+    pthread_mutex_unlock(&_mutex_lock);
+
 
     // Unlock queue
-    printf("Running\n");
     while (!_done) {
         // Lock mutex
         pthread_mutex_lock(&_mutex_lock);

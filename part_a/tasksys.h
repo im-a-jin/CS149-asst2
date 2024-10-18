@@ -22,7 +22,8 @@ struct TaskArgs {
 };
 
 struct TaskArgsA2 {
-    //int thread_id;
+    int thread_id;
+    bool *is_running;
     bool *done;
     std::queue<RunTask> *work_queue;
     pthread_mutex_t *mutex_lock;
