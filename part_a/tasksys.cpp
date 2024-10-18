@@ -173,6 +173,7 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
 
 TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {
 
+    printf("Cleaning up\n");
     _done = true;
 
     // Join threads
@@ -203,7 +204,7 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
     // }
 
     // Unlock queue
-
+    printf("Running\n");
     while (!_done) {
         // Lock mutex
         pthread_mutex_lock(&_mutex_lock);
