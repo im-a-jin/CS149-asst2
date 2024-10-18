@@ -143,6 +143,7 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
+
     _num_threads = num_threads;
 
     // Initialize threads - alloc memory
@@ -164,9 +165,8 @@ TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {
     }
 
     // Free memory
-    free(_is_running);
     free(_thread_pool);
-    free(_thread_args);
+    free(_is_running);
 }
 
 void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_total_tasks) {

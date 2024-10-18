@@ -6,11 +6,17 @@
 #include "stdlib.h"
 
 struct TaskArgs {
-  IRunnable* runnable;
-  int thread_id;
-  int num_total_tasks;
-  int num_threads;
+    IRunnable* runnable;
+    int thread_id;
+    int num_total_tasks;
+    int num_threads;
 };
+
+struct RunTask {
+    IRunnable* runnable;
+    int task_id;
+    int num_total_tasks;
+}
 
 void* runTaskWrapper(void * args);
 
@@ -60,7 +66,7 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
 
     private:
         // Work queue
-        std::queue<int> _work_queue;
+        std::queue<RunTask> _work_queue;
         bool * _is_running;
 
         // Vars for thread pool
