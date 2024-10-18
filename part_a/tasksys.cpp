@@ -18,7 +18,8 @@ void * runTaskWrapperA1(void * args) {
 }
 
 void * runTaskWrapperA2(void * args) {
-    // while True {
+    TaskArgsA2 *taskArgs = (TaskArgsA2 *) args;
+    while (!*(taskArgs->done)) {
 
         // lock mutex
             // default isRunning to off
@@ -30,7 +31,9 @@ void * runTaskWrapperA2(void * args) {
         // if local var, runtask
             // runtask
     
-    // }
+    }
+
+    return NULL;
 }
 
 /*
@@ -149,16 +152,29 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
     // Initialize threads - alloc memory
     _thread_pool = (pthread_t *) malloc(_num_threads * sizeof(pthread_t));
 
+    // Initialize mutex
+    pthread_mutex_init(&_mutex_lock, NULL);
+
     // Setup "isRunning" array
-    _is_running = (bool *) malloc(_num_threads * sizeof(bool));
+    _is_running = (bool *) calloc(false, _num_threads * sizeof(bool));
+
+
+    // Setup args
+    _args = (TaskArgsA2 *)malloc(sizeof(TaskArgsA2));
+    _args->done = &_done;
+    _args->work_queue = &_work_queue;
+    _args->mutex_lock = &_mutex_lock;
 
     // PThread create
     for (int i = 0; i < _num_threads; i++) {
-        pthread_create(&_thread_pool[i], NULL, runTaskWrapperA2, NULL);
+        pthread_create(&_thread_pool[i], NULL, runTaskWrapperA2, _args);
     }
 }
 
 TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {
+
+    _done = true;
+
     // Join threads
     for (int i = 0; i < _num_threads; i++) {
         pthread_join(_thread_pool[i], NULL);
@@ -167,6 +183,7 @@ TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {
     // Free memory
     free(_thread_pool);
     free(_is_running);
+    free(_args);
 }
 
 void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_total_tasks) {
@@ -187,14 +204,17 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
 
     // Unlock queue
 
-    // While true
+    while (!_done) {
         // Lock mutex
+        pthread_mutex_lock(&_mutex_lock);
 
         // Is the queue empty?
         // AND is nobody running anything?
             // If so, break
 
         // Unlock mutex
+        pthread_mutex_unlock(&_mutex_lock);
+    }
 }
 
 TaskID TaskSystemParallelThreadPoolSpinning::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,

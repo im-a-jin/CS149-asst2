@@ -4,6 +4,15 @@
 #include "itasksys.h"
 #include "pthread.h"
 #include "stdlib.h"
+#include <queue>
+
+
+struct RunTask {
+    IRunnable* runnable;
+    int task_id;
+    int num_total_tasks;
+};
+
 
 struct TaskArgs {
     IRunnable* runnable;
@@ -12,11 +21,13 @@ struct TaskArgs {
     int num_threads;
 };
 
-struct RunTask {
-    IRunnable* runnable;
-    int task_id;
-    int num_total_tasks;
-}
+struct TaskArgsA2 {
+    //int thread_id;
+    bool *done;
+    std::queue<RunTask> *work_queue;
+    pthread_mutex_t *mutex_lock;
+};
+
 
 void* runTaskWrapper(void * args);
 
@@ -67,7 +78,10 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
     private:
         // Work queue
         std::queue<RunTask> _work_queue;
+        pthread_mutex_t _mutex_lock;
         bool * _is_running;
+        bool _done = false;
+        TaskArgsA2 * _args;
 
         // Vars for thread pool
         pthread_t * _thread_pool;
