@@ -69,12 +69,14 @@ void * runTaskWrapperA3(void * args) {
             taskArgs->work_queue->pop();
             next_task = {cur_task.runnable, cur_task.task_id + 1, cur_task.num_total_tasks};
             taskArgs->work_queue->push(next_task);
+            printf("Thread %d running task %d of %d\n", taskArgs->thread_id, cur_task.task_id, cur_task.num_total_tasks);
             if (cur_task.task_id < cur_task.num_total_tasks) {
                 runnable = true;
                 pthread_cond_signal(taskArgs->queue_add);
             } else {
-                if (cur_task.task_id == cur_task.num_total_tasks + taskArgs->num_threads)
+                if (cur_task.task_id == cur_task.num_total_tasks + taskArgs->num_threads - 1) {
                     pthread_cond_signal(taskArgs->all_threads_done);
+                }
                 pthread_cond_wait(taskArgs->run_complete, taskArgs->mutex_lock);
             }
         } else {
@@ -83,8 +85,9 @@ void * runTaskWrapperA3(void * args) {
         pthread_mutex_unlock(taskArgs->mutex_lock);
     }
 
-    if (runnable)
+    if (runnable) {
         cur_task.runnable->runTask(cur_task.task_id, cur_task.num_total_tasks);
+    }
 }
 
 
@@ -370,9 +373,12 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
     pthread_mutex_unlock(&_mutex_lock);
 
     pthread_mutex_lock(&_mutex_lock);
+    printf("-All threads done\n");
     pthread_cond_wait(&_all_threads_done, &_mutex_lock);
-    if (!_work_queue.empty())
+    printf("All threads done\n");
+    if (!_work_queue.empty()) {
         _work_queue.pop();
+    }
     pthread_mutex_unlock(&_mutex_lock);
     
     pthread_cond_signal(&_run_complete);
