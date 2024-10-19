@@ -59,32 +59,32 @@ void * runTaskWrapperA2(void * args) {
 void * runTaskWrapperA3(void * args) {
     TaskArgsA3 *taskArgs = (TaskArgsA3 *) args;
     RunTask cur_task, next_task;
+    bool runnable;
 
-    // while true
-    //      is_running false
-    //      lock mutex
-    //      check if queue not empty
-    //          set is_running true
-    //          pop task
-    //          if task_id < num_total_tasks
-    //              push task_id + 1
-    //              signal queue_add
-    //          else signal
-    //              pop "task"
-    //              push "task" + 1
-    //              if task_id = num_total_tasks + num_threads
-    //                  lock all done
-    //                  signal all done
-    //                  unlock all done
-    //              lock run complete
-    //              wait on run complete
-    //              unlock run complete
-    //      else
-    //          wait on queue_add
-    //      unlock mutex
-    //
-    //      if is_running
-    //          run task
+    while (true) {
+        runnable = false;
+        pthread_mutex_lock(taskArgs->mutex_lock);
+        if (!taskArgs->work_queue->empty()) {
+            cur_task = taskArgs->work_queue->front();
+            taskArgs->work_queue->pop();
+            next_task = {cur_task.runnable, cur_task.task_id + 1, cur_task.num_total_tasks};
+            taskArgs->work_queue->push(next_task);
+            if (cur_task.task_id < cur_task.num_total_tasks) {
+                runnable = true;
+                pthread_cond_signal(taskArgs->queue_add);
+            } else {
+                if (cur_task.task_id == cur_task.num_total_tasks + taskArgs->num_threads)
+                    pthread_cond_signal(taskArgs->all_threads_done);
+                pthread_cond_wait(taskArgs->run_complete, taskArgs->mutex_lock);
+            }
+        } else {
+            pthread_cond_wait(taskArgs->queue_add, taskArgs->mutex_lock);
+        }
+        pthread_mutex_unlock(taskArgs->mutex_lock);
+    }
+
+    if (runnable)
+        cur_task.runnable->runTask(cur_task.task_id, cur_task.num_total_tasks);
 }
 
 
