@@ -81,7 +81,7 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
         std::queue<RunTask> _work_queue;
         pthread_mutex_t _mutex_lock;
         bool * _is_running;
-        bool _done = false;
+        bool *_done;
         TaskArgsA2 * _args;
 
         // Vars for thread pool

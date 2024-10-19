@@ -19,8 +19,11 @@ void * runTaskWrapperA1(void * args) {
 void * runTaskWrapperA2(void * args) {
     TaskArgsA2 *taskArgs = (TaskArgsA2 *) args;
     RunTask cur_task, next_task;
+    // Print pointer to done
+    // printf("Pointer to done: %p\n", taskArgs->done);
 
     while (!*(taskArgs->done)) {
+        // printf("Done status: %d\n", *(taskArgs->done));
 
         pthread_mutex_lock(taskArgs->mutex_lock);
         // default isRunning to off
@@ -47,8 +50,8 @@ void * runTaskWrapperA2(void * args) {
 
         // if local var, runtask
         if (taskArgs->is_running[taskArgs->thread_id]) {
-            printf("Thread %d running task %d\n", taskArgs->thread_id, cur_task.task_id);
-            printf("Queue size: %d\n", taskArgs->work_queue->size());
+            // printf("Thread %d running task %d\n", taskArgs->thread_id, cur_task.task_id);
+            // printf("Queue size: %d\n", taskArgs->work_queue->size());
             cur_task.runnable->runTask(cur_task.task_id, cur_task.num_total_tasks);
         }
     }
@@ -169,6 +172,10 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
 
     _num_threads = num_threads;
 
+    _done = (bool *)malloc(sizeof(bool));
+    *_done = false;
+
+
     // Initialize threads - alloc memory
     _thread_pool = (pthread_t *) malloc(_num_threads * sizeof(pthread_t));
 
@@ -186,7 +193,7 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
     for (int i = 0; i < _num_threads; i++) {
         _args[i].thread_id = i;
         _args[i].is_running = _is_running;
-        _args[i].done = &_done;
+        _args[i].done = _done;
         _args[i].work_queue = &_work_queue;
         _args[i].mutex_lock = &_mutex_lock;
         pthread_create(&_thread_pool[i], NULL, runTaskWrapperA2, &_args[i]);
@@ -195,8 +202,9 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
 
 TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {
 
-    printf("Destructor called\n");
-    _done = true;
+    // printf("Destructor called\n");
+    // Print pointer to done
+    *_done = true;
 
     // Join threads
     for (int i = 0; i < _num_threads; i++) {
@@ -239,9 +247,9 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
             // AND is nobody running anything?
             for (int i=0; i<_num_threads; i++) {
                 any_running &= _is_running[i];
-                if (_is_running[i]) {
-                    printf("Thread %d is running\n", i);
-                }
+                // if (_is_running[i]) {
+                //     printf("Thread %d is running\n", i);
+                // }
             }
 
             // If so, break
@@ -254,7 +262,7 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
         pthread_mutex_unlock(&_mutex_lock);
     }
 
-    printf("All threads are done\n");
+    // printf("All threads are done\n");
 }
 
 TaskID TaskSystemParallelThreadPoolSpinning::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
