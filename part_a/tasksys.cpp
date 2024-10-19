@@ -20,10 +20,8 @@ void * runTaskWrapperA2(void * args) {
     TaskArgsA2 *taskArgs = (TaskArgsA2 *) args;
     RunTask cur_task, next_task;
     // Print pointer to done
-    // printf("Pointer to done: %p\n", taskArgs->done);
 
     while (!*(taskArgs->done)) {
-        // printf("Done status: %d\n", *(taskArgs->done));
 
         pthread_mutex_lock(taskArgs->mutex_lock);
         // default isRunning to off
@@ -50,14 +48,45 @@ void * runTaskWrapperA2(void * args) {
 
         // if local var, runtask
         if (taskArgs->is_running[taskArgs->thread_id]) {
-            // printf("Thread %d running task %d\n", taskArgs->thread_id, cur_task.task_id);
-            // printf("Queue size: %d\n", taskArgs->work_queue->size());
             cur_task.runnable->runTask(cur_task.task_id, cur_task.num_total_tasks);
         }
     }
 
     return NULL;
 }
+
+
+void * runTaskWrapperA3(void * args) {
+    TaskArgsA3 *taskArgs = (TaskArgsA3 *) args;
+    RunTask cur_task, next_task;
+
+    // while true
+    //      is_running false
+    //      lock mutex
+    //      check if queue not empty
+    //          set is_running true
+    //          pop task
+    //          if task_id < num_total_tasks
+    //              push task_id + 1
+    //              signal queue_add
+    //          else signal
+    //              pop "task"
+    //              push "task" + 1
+    //              if task_id = num_total_tasks + num_threads
+    //                  lock all done
+    //                  signal all done
+    //                  unlock all done
+    //              lock run complete
+    //              wait on run complete
+    //              unlock run complete
+    //      else
+    //          wait on queue_add
+    //      unlock mutex
+    //
+    //      if is_running
+    //          run task
+}
+
 
 /*
  * ================================================================
@@ -202,7 +231,6 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
 
 TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {
 
-    // printf("Destructor called\n");
     // Print pointer to done
     *_done = true;
 
@@ -248,7 +276,6 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
             for (int i=0; i<_num_threads; i++) {
                 any_running &= _is_running[i];
                 // if (_is_running[i]) {
-                //     printf("Thread %d is running\n", i);
                 // }
             }
 
@@ -262,7 +289,6 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
         pthread_mutex_unlock(&_mutex_lock);
     }
 
-    // printf("All threads are done\n");
 }
 
 TaskID TaskSystemParallelThreadPoolSpinning::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
@@ -293,6 +319,29 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
+
+    _num_threads = num_threads;
+
+    _thread_pool = (pthread_t *) malloc(_num_threads * sizeof(pthread_t));
+
+    pthread_mutex_init(&_mutex_lock, NULL);
+    pthread_cond_init(&_queue_add, NULL);
+    pthread_cond_init(&_all_threads_done, NULL);
+    pthread_cond_init(&_run_complete, NULL);
+
+    _args = (TaskArgsA3 *)malloc(_num_threads*sizeof(TaskArgsA3));
+
+    // PThread create
+    for (int i = 0; i < _num_threads; i++) {
+        _args[i].thread_id = i;
+        _args[i].num_threads = _num_threads;
+        _args[i].work_queue = &_work_queue;
+        _args[i].mutex_lock = &_mutex_lock;
+        _args[i].queue_add = &_queue_add;
+        _args[i].all_threads_done = &_all_threads_done;
+        _args[i].run_complete = &_run_complete;
+        pthread_create(&_thread_pool[i], NULL, runTaskWrapperA3, &_args[i]);
+    }
 }
 
 TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
@@ -302,20 +351,31 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
+
+    free(_thread_pool);
+    free(_args);
 }
 
 void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_total_tasks) {
-
-
     //
     // TODO: CS149 students will modify the implementation of this
     // method in Parts A and B.  The implementation provided below runs all
     // tasks sequentially on the calling thread.
     //
+    RunTask first_task = {runnable, 0, num_total_tasks};
 
-    for (int i = 0; i < num_total_tasks; i++) {
-        runnable->runTask(i, num_total_tasks);
-    }
+    pthread_mutex_lock(&_mutex_lock);
+    _work_queue.push(first_task);
+    pthread_cond_signal(&_queue_add);
+    pthread_mutex_unlock(&_mutex_lock);
+
+    pthread_mutex_lock(&_mutex_lock);
+    pthread_cond_wait(&_all_threads_done, &_mutex_lock);
+    if (!_work_queue.empty())
+        _work_queue.pop();
+    pthread_mutex_unlock(&_mutex_lock);
+    
+    pthread_cond_signal(&_run_complete);
 }
 
 TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,

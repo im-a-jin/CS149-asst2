@@ -29,6 +29,16 @@ struct TaskArgsA2 {
     pthread_mutex_t *mutex_lock;
 };
 
+struct TaskArgsA3 {
+    int thread_id;
+    int num_threads;
+    std::queue<RunTask> *work_queue;
+    pthread_mutex_t *mutex_lock;
+    pthread_cond_t *queue_add;
+    pthread_cond_t *all_threads_done;
+    pthread_cond_t *run_complete;
+};
+
 
 void* runTaskWrapper(void * args);
 
@@ -105,6 +115,16 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
  * itasksys.h for documentation of the ITaskSystem interface.
  */
 class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
+    private:
+        std::queue<RunTask> _work_queue;
+        pthread_mutex_t _mutex_lock;
+        pthread_cond_t _queue_add;
+        pthread_cond_t _all_threads_done;
+        pthread_cond_t _run_complete;
+        TaskArgsA3 * _args;
+        pthread_t * _thread_pool;
+        int _num_threads;
+
     public:
         TaskSystemParallelThreadPoolSleeping(int num_threads);
         ~TaskSystemParallelThreadPoolSleeping();
