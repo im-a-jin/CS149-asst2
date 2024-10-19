@@ -83,7 +83,7 @@ void * runTaskWrapperA3(void * args) {
         pthread_mutex_unlock(taskArgs->mutex_lock);
 
         if (runnable) {
-            // printf("Thread %d running task %d of %d\n", taskArgs->thread_id, cur_task.task_id, cur_task.num_total_tasks);
+            // printf("Thread %d running task %d of %d with queue size %zu\n", taskArgs->thread_id, cur_task.task_id, cur_task.num_total_tasks, taskArgs->work_queue->size());
             cur_task.runnable->runTask(cur_task.task_id, cur_task.num_total_tasks);
         }
     }
@@ -214,7 +214,7 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
     pthread_mutex_init(&_mutex_lock, NULL);
 
     // Setup "isRunning" array
-    _is_running = (bool *) calloc(false, _num_threads * sizeof(bool));
+    _is_running = (bool *) malloc(_num_threads * sizeof(bool));
 
 
     // Setup args
