@@ -47,7 +47,9 @@ void * runTaskWrapperA2(void * args) {
 
         // if local var, runtask
         if (taskArgs->is_running[taskArgs->thread_id]) {
-            printf("Running task %d\n", cur_task.task_id);
+            printf("Thread %d running task %d\n", taskArgs->thread_id, cur_task.task_id);
+            printf("Queue size: %d\n", taskArgs->work_queue->size());
+            cur_task.runnable->runTask(cur_task.task_id, cur_task.num_total_tasks);
         }
     }
 
@@ -193,6 +195,7 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
 
 TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {
 
+    printf("Destructor called\n");
     _done = true;
 
     // Join threads
@@ -232,11 +235,13 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
 
         // Is the queue empty?
         if (_work_queue.empty()) {
-
-            // AND is nobody running anything?
             bool any_running = false;
+            // AND is nobody running anything?
             for (int i=0; i<_num_threads; i++) {
                 any_running &= _is_running[i];
+                if (_is_running[i]) {
+                    printf("Thread %d is running\n", i);
+                }
             }
 
             // If so, break
@@ -248,6 +253,8 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
         // Unlock mutex
         pthread_mutex_unlock(&_mutex_lock);
     }
+
+    printf("All threads are done\n");
 }
 
 TaskID TaskSystemParallelThreadPoolSpinning::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
