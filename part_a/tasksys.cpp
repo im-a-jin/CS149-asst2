@@ -357,12 +357,12 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
     // method in Parts A and B.  The implementation provided below runs all
     // tasks sequentially on the calling thread.
     //
-    pthread_cond_broadcast(&_reset);
 
     RunTask first_task = {runnable, 0, num_total_tasks};
 
     pthread_mutex_lock(&_mutex_lock);
     _work_queue.push(first_task);
+    pthread_cond_broadcast(&_reset);
     pthread_cond_signal(&_queue_add);
     pthread_cond_wait(&_all_threads_done, &_mutex_lock);
     if (!_work_queue.empty()) {
