@@ -7,7 +7,7 @@
 #include <queue>
 #include <algorithm>
 
-#define TASKS_PER_THREAD 4
+#define TASKS_PER_THREAD 8
 
 struct RunTask {
     IRunnable* runnable;
