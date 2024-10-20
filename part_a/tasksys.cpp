@@ -6,7 +6,7 @@ ITaskSystem::ITaskSystem(int num_threads) {}
 ITaskSystem::~ITaskSystem() {}
 
 void * runTaskWrapperA1(void * args) {
-    TaskArgs * taskArgs = (TaskArgs *) args;
+    TaskArgsA1 * taskArgs = (TaskArgsA1 *) args;
     int thread_id = taskArgs->thread_id;
     int num_total_tasks = taskArgs->num_total_tasks;
     int num_threads = taskArgs->num_threads;
@@ -64,21 +64,17 @@ void * runTaskWrapperA3(void * args) {
                 if (cur_task.task_id == cur_task.num_total_tasks + taskArgs->num_threads - 1) {
                     pthread_cond_signal(taskArgs->all_threads_done);
                 }
-                // printf("Thread %d waiting on run complete\n", taskArgs->thread_id);
                 pthread_cond_wait(taskArgs->reset, taskArgs->mutex_lock);
             }
         } else {
-            // printf("Thread %d waiting on queue add\n", taskArgs->thread_id);
             pthread_cond_wait(taskArgs->queue_add, taskArgs->mutex_lock);
         }
         pthread_mutex_unlock(taskArgs->mutex_lock);
 
         if (runnable) {
-            // printf("Thread %d running task %d of %d with queue size %zu\n", taskArgs->thread_id, cur_task.task_id, cur_task.num_total_tasks, taskArgs->work_queue->size());
             cur_task.runnable->runTask(cur_task.task_id, cur_task.num_total_tasks);
         }
     }
-    // printf("Thread %d returned\n", taskArgs->thread_id);
 
     return NULL;
 }
@@ -147,7 +143,7 @@ void TaskSystemParallelSpawn::run(IRunnable* runnable, int num_total_tasks) {
     //
 
     pthread_t *threads = (pthread_t *) malloc(_num_threads * sizeof(pthread_t));
-    TaskArgs *args = (TaskArgs *) malloc(_num_threads * sizeof(TaskArgs));
+    TaskArgsA1 *args = (TaskArgsA1 *) malloc(_num_threads * sizeof(TaskArgsA1));
 
     for (int i = 0; i < _num_threads; i++) {
         args[i].runnable = runnable;
@@ -322,7 +318,6 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
         _args[i].reset = &_reset;
         pthread_create(&_thread_pool[i], NULL, runTaskWrapperA3, &_args[i]);
     }
-    // printf("Threads init\n");
 }
 
 TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
@@ -336,11 +331,9 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     pthread_cond_broadcast(&_reset);
 
     // Join threads
-    // printf("Joining threads\n");
     for (int i = 0; i < _num_threads; i++) {
         pthread_join(_thread_pool[i], NULL);
     }
-    // printf("Threads joined\n");
 
     pthread_mutex_destroy(&_mutex_lock);
     pthread_cond_destroy(&_queue_add);
@@ -350,7 +343,6 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     free(_done);
     free(_thread_pool);
     free(_args);
-    // printf("All destroyed\n");
 }
 
 void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_total_tasks) {

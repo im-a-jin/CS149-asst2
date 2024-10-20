@@ -14,7 +14,7 @@ struct RunTask {
 };
 
 
-struct TaskArgs {
+struct TaskArgsA1 {
     IRunnable* runnable;
     int thread_id;
     int num_total_tasks;
@@ -41,7 +41,11 @@ struct TaskArgsA3 {
 };
 
 
-void* runTaskWrapper(void * args);
+void* runTaskWrapperA1(void * args);
+
+void* runTaskWrapperA2(void * args);
+
+void* runTaskWrapperA3(void * args);
 
 /*
  * TaskSystemSerial: This class is the student's implementation of a
