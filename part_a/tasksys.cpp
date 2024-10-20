@@ -18,26 +18,21 @@ void * runTaskWrapperA1(void * args) {
 
 void * runTaskWrapperA2(void * args) {
     TaskArgsA2 *taskArgs = (TaskArgsA2 *) args;
-    RunTask cur_task, next_task;
+    int cur_task;
 
     while (!*(taskArgs->done)) {
         pthread_mutex_lock(taskArgs->mutex_lock);
         taskArgs->is_running[taskArgs->thread_id] = false;
 
-        if (!taskArgs->work_queue->empty()) {
+        if (taskArgs->task->task_id < taskArgs->task->num_total_tasks) {
             taskArgs->is_running[taskArgs->thread_id] = true;
-            cur_task = taskArgs->work_queue->front();
-            taskArgs->work_queue->pop();
-
-            if (cur_task.task_id + 1 < cur_task.num_total_tasks) {
-                next_task = {cur_task.runnable, cur_task.task_id + 1, cur_task.num_total_tasks};
-                taskArgs->work_queue->push(next_task);
-            }
+            cur_task = taskArgs->task->task_id;
+            taskArgs->task->task_id += 1;
         }
         pthread_mutex_unlock(taskArgs->mutex_lock);
 
         if (taskArgs->is_running[taskArgs->thread_id]) {
-            cur_task.runnable->runTask(cur_task.task_id, cur_task.num_total_tasks);
+            taskArgs->task->runnable->runTask(cur_task, taskArgs->task->num_total_tasks);
         }
     }
 
@@ -192,23 +187,22 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
     //
     _num_threads = num_threads;
 
+    _task = (RunTask *) malloc(sizeof(RunTask));
     _done = (bool *) malloc(sizeof(bool));
     *_done = false;
 
     _thread_pool = (pthread_t *) malloc(_num_threads * sizeof(pthread_t));
+    _is_running = (bool *) malloc(_num_threads * sizeof(bool));
+    _args = (TaskArgsA2 *) malloc(_num_threads * sizeof(TaskArgsA2));
 
     pthread_mutex_init(&_mutex_lock, NULL);
-
-    _is_running = (bool *) malloc(_num_threads * sizeof(bool));
-
-    _args = (TaskArgsA2 *) malloc(_num_threads * sizeof(TaskArgsA2));
 
     // PThread create
     for (int i = 0; i < _num_threads; i++) {
         _args[i].thread_id = i;
         _args[i].is_running = _is_running;
         _args[i].done = _done;
-        _args[i].work_queue = &_work_queue;
+        _args[i].task = _task;
         _args[i].mutex_lock = &_mutex_lock;
         pthread_create(&_thread_pool[i], NULL, runTaskWrapperA2, &_args[i]);
     }
@@ -229,6 +223,7 @@ TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {
     free(_done);
     free(_thread_pool);
     free(_is_running);
+    free(_task);
     free(_args);
 }
 
@@ -238,19 +233,18 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
     // method in Part A.  The implementation provided below runs all
     // tasks sequentially on the calling thread.
     //
-
-    RunTask first_task = {runnable, 0, num_total_tasks};
+    _task->runnable = runnable;
+    _task->num_total_tasks = num_total_tasks;
 
     pthread_mutex_lock(&_mutex_lock);
-    _work_queue.push(first_task);
+    _task->task_id = 0;
     pthread_mutex_unlock(&_mutex_lock);
 
     while (!(*_done)) {
         pthread_mutex_lock(&_mutex_lock);
-
-        if (_work_queue.empty()) {
+        if (_task->task_id == _task->num_total_tasks) {
             bool any_running = false;
-            for (int i=0; i<_num_threads; i++) {
+            for (int i = 0; i < _num_threads; i++) {
                 any_running |= _is_running[i];
             }
 
@@ -259,7 +253,6 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
                 break;
             }
         }
-
         pthread_mutex_unlock(&_mutex_lock);
     }
 }

@@ -25,7 +25,7 @@ struct TaskArgsA2 {
     int thread_id;
     bool *is_running;
     bool *done;
-    std::queue<RunTask> *work_queue;
+    RunTask *task;
     pthread_mutex_t *mutex_lock;
 };
 
@@ -90,14 +90,13 @@ class TaskSystemParallelSpawn: public ITaskSystem {
  * documentation of the ITaskSystem interface.
  */
 class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
-
     private:
-        std::queue<RunTask> _work_queue;
+        RunTask *_task;
         pthread_mutex_t _mutex_lock;
-        bool * _is_running;
+        bool *_is_running;
         bool *_done;
-        TaskArgsA2 * _args;
-        pthread_t * _thread_pool;
+        TaskArgsA2 *_args;
+        pthread_t *_thread_pool;
         int _num_threads;
 
     public:
@@ -123,8 +122,8 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         pthread_cond_t _queue_add;
         pthread_cond_t _all_threads_done;
         pthread_cond_t _reset;
-        TaskArgsA3 * _args;
-        pthread_t * _thread_pool;
+        TaskArgsA3 *_args;
+        pthread_t *_thread_pool;
         int _num_threads;
         bool *_done;
 
