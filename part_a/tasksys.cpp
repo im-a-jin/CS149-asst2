@@ -108,7 +108,7 @@ void * runTaskWrapperA3(void * args) {
         pthread_mutex_unlock(taskArgs->mutex_lock);
         auto outer_end = std::chrono::high_resolution_clock::now();
         auto outer_duration = std::chrono::duration_cast<std::chrono::microseconds>(outer_end - outer_start);
-        outer_run_time += outer_duration.count() / 1000.0;x
+        outer_run_time += outer_duration.count() / 1000.0;
 
         if (runnable) {
             auto exec_start = std::chrono::high_resolution_clock::now();
