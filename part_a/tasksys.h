@@ -88,14 +88,11 @@ class TaskSystemParallelSpawn: public ITaskSystem {
 class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
 
     private:
-        // Work queue
         std::queue<RunTask> _work_queue;
         pthread_mutex_t _mutex_lock;
         bool * _is_running;
         bool *_done;
         TaskArgsA2 * _args;
-
-        // Vars for thread pool
         pthread_t * _thread_pool;
         int _num_threads;
 
