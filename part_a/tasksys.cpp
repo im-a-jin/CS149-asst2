@@ -65,7 +65,7 @@ void * runTaskWrapperA3(void * args) {
                     pthread_cond_signal(taskArgs->all_threads_done);
                 }
                 // printf("Thread %d waiting on run complete\n", taskArgs->thread_id);
-                pthread_cond_wait(taskArgs->run_complete, taskArgs->mutex_lock);
+                pthread_cond_wait(taskArgs->reset, taskArgs->mutex_lock);
             }
         } else {
             // printf("Thread %d waiting on queue add\n", taskArgs->thread_id);
@@ -306,7 +306,7 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
     pthread_mutex_init(&_mutex_lock, NULL);
     pthread_cond_init(&_queue_add, NULL);
     pthread_cond_init(&_all_threads_done, NULL);
-    pthread_cond_init(&_run_complete, NULL);
+    pthread_cond_init(&_reset, NULL);
 
     _args = (TaskArgsA3 *) malloc(_num_threads * sizeof(TaskArgsA3));
 
@@ -319,7 +319,7 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
         _args[i].mutex_lock = &_mutex_lock;
         _args[i].queue_add = &_queue_add;
         _args[i].all_threads_done = &_all_threads_done;
-        _args[i].run_complete = &_run_complete;
+        _args[i].reset = &_reset;
         pthread_create(&_thread_pool[i], NULL, runTaskWrapperA3, &_args[i]);
     }
     // printf("Threads init\n");
@@ -333,11 +333,11 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     // (requiring changes to tasksys.h).
     //
     *_done = true;
+    pthread_cond_broadcast(&_reset);
 
     // Join threads
     // printf("Joining threads\n");
     for (int i = 0; i < _num_threads; i++) {
-        pthread_cond_broadcast(&_queue_add);
         pthread_join(_thread_pool[i], NULL);
     }
     // printf("Threads joined\n");
@@ -345,7 +345,7 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     pthread_mutex_destroy(&_mutex_lock);
     pthread_cond_destroy(&_queue_add);
     pthread_cond_destroy(&_all_threads_done);
-    pthread_cond_destroy(&_run_complete);
+    pthread_cond_destroy(&_reset);
 
     free(_done);
     free(_thread_pool);
@@ -359,6 +359,8 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
     // method in Parts A and B.  The implementation provided below runs all
     // tasks sequentially on the calling thread.
     //
+    pthread_cond_broadcast(&_reset);
+
     RunTask first_task = {runnable, 0, num_total_tasks};
 
     pthread_mutex_lock(&_mutex_lock);
@@ -369,8 +371,6 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
         _work_queue.pop();
     }
     pthread_mutex_unlock(&_mutex_lock);
-    
-    pthread_cond_broadcast(&_run_complete);
 }
 
 TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,

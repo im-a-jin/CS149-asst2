@@ -37,7 +37,7 @@ struct TaskArgsA3 {
     pthread_mutex_t *mutex_lock;
     pthread_cond_t *queue_add;
     pthread_cond_t *all_threads_done;
-    pthread_cond_t *run_complete;
+    pthread_cond_t *reset;
 };
 
 
@@ -121,7 +121,7 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         pthread_mutex_t _mutex_lock;
         pthread_cond_t _queue_add;
         pthread_cond_t _all_threads_done;
-        pthread_cond_t _run_complete;
+        pthread_cond_t _reset;
         TaskArgsA3 * _args;
         pthread_t * _thread_pool;
         int _num_threads;
