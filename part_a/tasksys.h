@@ -5,7 +5,9 @@
 #include "pthread.h"
 #include "stdlib.h"
 #include <queue>
+#include <algorithm>
 
+#define TASKS_PER_THREAD 4
 
 struct RunTask {
     IRunnable* runnable;

@@ -29,15 +29,17 @@ void * runTaskWrapperA2(void * args) {
             cur_task = taskArgs->work_queue->front();
             taskArgs->work_queue->pop();
 
-            if (cur_task.task_id + 1 < cur_task.num_total_tasks) {
-                next_task = {cur_task.runnable, cur_task.task_id + 1, cur_task.num_total_tasks};
+            if (cur_task.task_id + TASKS_PER_THREAD < cur_task.num_total_tasks) {
+                next_task = {cur_task.runnable, cur_task.task_id + TASKS_PER_THREAD, cur_task.num_total_tasks};
                 taskArgs->work_queue->push(next_task);
             }
         }
         pthread_mutex_unlock(taskArgs->mutex_lock);
 
         if (taskArgs->is_running[taskArgs->thread_id]) {
-            cur_task.runnable->runTask(cur_task.task_id, cur_task.num_total_tasks);
+            for (int i = 0; i < std::min(TASKS_PER_THREAD, cur_task.num_total_tasks-cur_task.task_id); i++) {
+                cur_task.runnable->runTask(cur_task.task_id + i, cur_task.num_total_tasks);
+            }
         }
     }
 
