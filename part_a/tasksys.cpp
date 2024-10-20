@@ -19,34 +19,23 @@ void * runTaskWrapperA1(void * args) {
 void * runTaskWrapperA2(void * args) {
     TaskArgsA2 *taskArgs = (TaskArgsA2 *) args;
     RunTask cur_task, next_task;
-    // Print pointer to done
 
     while (!*(taskArgs->done)) {
-
         pthread_mutex_lock(taskArgs->mutex_lock);
-        // default isRunning to off
         taskArgs->is_running[taskArgs->thread_id] = false;
 
-        // is there anything on the queue?
         if (!taskArgs->work_queue->empty()) {
-            // switch my isRunning on (threadId indexed)
             taskArgs->is_running[taskArgs->thread_id] = true;
-
-            // pop the queue and hold on to the var (locally)
             cur_task = taskArgs->work_queue->front();
             taskArgs->work_queue->pop();
 
-            // add 1 to taskId and push to queue
             if (cur_task.task_id + 1 < cur_task.num_total_tasks) {
                 next_task = {cur_task.runnable, cur_task.task_id + 1, cur_task.num_total_tasks};
                 taskArgs->work_queue->push(next_task);
             }
-
         }
-
         pthread_mutex_unlock(taskArgs->mutex_lock);
 
-        // if local var, runtask
         if (taskArgs->is_running[taskArgs->thread_id]) {
             cur_task.runnable->runTask(cur_task.task_id, cur_task.num_total_tasks);
         }
@@ -68,9 +57,9 @@ void * runTaskWrapperA3(void * args) {
             taskArgs->work_queue->pop();
             next_task = {cur_task.runnable, cur_task.task_id + 1, cur_task.num_total_tasks};
             taskArgs->work_queue->push(next_task);
+            pthread_cond_signal(taskArgs->queue_add);
             if (cur_task.task_id < cur_task.num_total_tasks) {
                 runnable = true;
-                pthread_cond_signal(taskArgs->queue_add);
             } else {
                 if (cur_task.task_id == cur_task.num_total_tasks + taskArgs->num_threads - 1) {
                     pthread_cond_signal(taskArgs->all_threads_done);
@@ -83,7 +72,7 @@ void * runTaskWrapperA3(void * args) {
         pthread_mutex_unlock(taskArgs->mutex_lock);
 
         if (runnable) {
-            // printf("Thread %d running task %d of %d with queue size %zu\n", taskArgs->thread_id, cur_task.task_id, cur_task.num_total_tasks, taskArgs->work_queue->size());
+            printf("Thread %d running task %d of %d with queue size %zu\n", taskArgs->thread_id, cur_task.task_id, cur_task.num_total_tasks, taskArgs->work_queue->size());
             cur_task.runnable->runTask(cur_task.task_id, cur_task.num_total_tasks);
         }
     }
@@ -248,49 +237,35 @@ TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {
 }
 
 void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_total_tasks) {
-
-
     //
     // TODO: CS149 students will modify the implementation of this
     // method in Part A.  The implementation provided below runs all
     // tasks sequentially on the calling thread.
     //
 
-    // Lock queue
-
-    // Pour first task into queue
     RunTask first_task = {runnable, 0, num_total_tasks};
 
     pthread_mutex_lock(&_mutex_lock);
     _work_queue.push(first_task);
     pthread_mutex_unlock(&_mutex_lock);
 
-
-    // Unlock queue
-    while (!_done) {
-        // Lock mutex
+    while (!(*_done)) {
         pthread_mutex_lock(&_mutex_lock);
 
-        // Is the queue empty?
         if (_work_queue.empty()) {
             bool any_running = false;
-            // AND is nobody running anything?
             for (int i=0; i<_num_threads; i++) {
-                any_running &= _is_running[i];
-                // if (_is_running[i]) {
-                // }
+                any_running |= _is_running[i];
             }
 
-            // If so, break
             if (!any_running) {
+                pthread_mutex_unlock(&_mutex_lock);
                 break;
             }
         }
 
-        // Unlock mutex
         pthread_mutex_unlock(&_mutex_lock);
     }
-
 }
 
 TaskID TaskSystemParallelThreadPoolSpinning::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
