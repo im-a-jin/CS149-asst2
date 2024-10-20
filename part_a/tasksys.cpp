@@ -268,10 +268,6 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
 }
 
 TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {
-    // Print time
-    printf("Average time in run, ms: %f\n", _time_in_run / n_run_calls);
-    printf("Number of run calls: %d\n", n_run_calls);
-
     // Print pointer to done
     *_done = true;
 
@@ -298,7 +294,7 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
     //
     _task->runnable = runnable;
     _task->num_total_tasks = num_total_tasks;
-    auto start = std::chrono::high_resolution_clock::now();
+    // auto start = std::chrono::high_resolution_clock::now();
 
 
     RunTask first_task = {runnable, 0, num_total_tasks};
@@ -323,10 +319,10 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
         pthread_mutex_unlock(&_mutex_lock);
     }
 
-    auto end = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);    
-    double run_time = duration.count() / 1000.0;
-    _time_in_run += run_time;
+    // auto end = std::chrono::high_resolution_clock::now();
+    // auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);    
+    // double run_time = duration.count() / 1000.0;
+    // _time_in_run += run_time;
     n_run_calls++;
 }
 
