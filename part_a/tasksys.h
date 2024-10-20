@@ -99,6 +99,10 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
         pthread_t *_thread_pool;
         int _num_threads;
 
+        // Vars for time measurement
+        double _time_in_run = 0.0;
+        int n_run_calls = 0;
+
     public:
         TaskSystemParallelThreadPoolSpinning(int num_threads);
         ~TaskSystemParallelThreadPoolSpinning();

@@ -1,4 +1,5 @@
 #include "tasksys.h"
+#include <chrono>
 
 IRunnable::~IRunnable() {}
 
@@ -20,8 +21,16 @@ void * runTaskWrapperA2(void * args) {
     TaskArgsA2 *taskArgs = (TaskArgsA2 *) args;
     int cur_task;
 
+    // // Time measurement
+    // auto start = std::chrono::high_resolution_clock::now();
+    // double outer_run_time = 0.0;
+    // double inner_run_time = 0.0;
+    // double exec_run_time = 0.0;
+
     while (!*(taskArgs->done)) {
+        // auto outer_start = std::chrono::high_resolution_clock::now();
         pthread_mutex_lock(taskArgs->mutex_lock);
+        // auto inner_start = std::chrono::high_resolution_clock::now();
         taskArgs->is_running[taskArgs->thread_id] = false;
 
         if (taskArgs->task->task_id < taskArgs->task->num_total_tasks) {
@@ -29,24 +38,52 @@ void * runTaskWrapperA2(void * args) {
             cur_task = taskArgs->task->task_id;
             taskArgs->task->task_id += 1;
         }
+        // auto inner_end = std::chrono::high_resolution_clock::now();
+        // auto inner_duration = std::chrono::duration_cast<std::chrono::microseconds>(inner_end - inner_start);
+        // inner_run_time += inner_duration.count() / 1000.0;
         pthread_mutex_unlock(taskArgs->mutex_lock);
+        // auto outer_end = std::chrono::high_resolution_clock::now();
+        // auto outer_duration = std::chrono::duration_cast<std::chrono::microseconds>(outer_end - outer_start);
+        // outer_run_time += outer_duration.count() / 1000.0;
 
         if (taskArgs->is_running[taskArgs->thread_id]) {
+            // auto exec_start = std::chrono::high_resolution_clock::now();
             taskArgs->task->runnable->runTask(cur_task, taskArgs->task->num_total_tasks);
+            // auto exec_end = std::chrono::high_resolution_clock::now();
+            // auto exec_duration = std::chrono::duration_cast<std::chrono::microseconds>(exec_end - exec_start);
+            // exec_run_time += exec_duration.count() / 1000.0;
         }
+
     }
 
+    // auto end = std::chrono::high_resolution_clock::now();
+    // auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+    // double run_time = duration.count() / 1000.0;
+    // printf("Thread %d total run time ms: %f\n", taskArgs->thread_id, run_time);
+    // printf("Thread %d outer run time ms: %f\n", taskArgs->thread_id, outer_run_time);
+    // printf("Thread %d inner run time ms: %f\n", taskArgs->thread_id, inner_run_time);
+    // printf("Thread %d exec run time ms: %f\n", taskArgs->thread_id, exec_run_time);
+    
     return NULL;
 }
 
 void * runTaskWrapperA3(void * args) {
+    // Time measurement
+    auto start = std::chrono::high_resolution_clock::now();
+    double outer_run_time = 0.0;
+    double inner_run_time = 0.0;
+    double exec_run_time = 0.0;
+
+
     TaskArgsA3 *taskArgs = (TaskArgsA3 *) args;
     RunTask cur_task, next_task;
     bool runnable;
 
     while (!*(taskArgs->done)) {
         runnable = false;
+        auto outer_start = std::chrono::high_resolution_clock::now();
         pthread_mutex_lock(taskArgs->mutex_lock);
+        auto inner_start = std::chrono::high_resolution_clock::now();
         if (!taskArgs->work_queue->empty()) {
             cur_task = taskArgs->work_queue->front();
             taskArgs->work_queue->pop();
@@ -64,12 +101,31 @@ void * runTaskWrapperA3(void * args) {
         } else {
             pthread_cond_wait(taskArgs->queue_add, taskArgs->mutex_lock);
         }
+        auto inner_end = std::chrono::high_resolution_clock::now();
+        auto inner_duration = std::chrono::duration_cast<std::chrono::microseconds>(inner_end - inner_start);
+        inner_run_time += inner_duration.count() / 1000.0;
         pthread_mutex_unlock(taskArgs->mutex_lock);
+        auto outer_end = std::chrono::high_resolution_clock::now();
+        auto outer_duration = std::chrono::duration_cast<std::chrono::microseconds>(outer_end - outer_start);
+        outer_run_time += outer_duration.count() / 1000.0;
 
         if (runnable) {
+            auto exec_start = std::chrono::high_resolution_clock::now();
             cur_task.runnable->runTask(cur_task.task_id, cur_task.num_total_tasks);
+            auto exec_end = std::chrono::high_resolution_clock::now();
+            auto exec_duration = std::chrono::duration_cast<std::chrono::microseconds>(exec_end - exec_start);
+            exec_run_time += exec_duration.count() / 1000.0;
         }
     }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+    double run_time = duration.count() / 1000.0;
+    printf("Thread %d total run time ms: %f\n", taskArgs->thread_id, run_time);
+    printf("Thread %d outer run time ms: %f\n", taskArgs->thread_id, outer_run_time);
+    printf("Thread %d inner run time ms: %f\n", taskArgs->thread_id, inner_run_time);
+    printf("Thread %d exec run time ms: %f\n", taskArgs->thread_id, exec_run_time);
+   
 
     return NULL;
 }
@@ -185,6 +241,7 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
+
     _num_threads = num_threads;
 
     _task = (RunTask *) malloc(sizeof(RunTask));
@@ -206,9 +263,14 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
         _args[i].mutex_lock = &_mutex_lock;
         pthread_create(&_thread_pool[i], NULL, runTaskWrapperA2, &_args[i]);
     }
+
 }
 
 TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {
+    // Print time
+    printf("Average time in run, ms: %f\n", _time_in_run / n_run_calls);
+    printf("Number of run calls: %d\n", n_run_calls);
+
     // Print pointer to done
     *_done = true;
 
@@ -235,6 +297,10 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
     //
     _task->runnable = runnable;
     _task->num_total_tasks = num_total_tasks;
+    auto start = std::chrono::high_resolution_clock::now();
+
+
+    RunTask first_task = {runnable, 0, num_total_tasks};
 
     pthread_mutex_lock(&_mutex_lock);
     _task->task_id = 0;
@@ -255,6 +321,12 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
         }
         pthread_mutex_unlock(&_mutex_lock);
     }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);    
+    double run_time = duration.count() / 1000.0;
+    _time_in_run += run_time;
+    n_run_calls++;
 }
 
 TaskID TaskSystemParallelThreadPoolSpinning::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,

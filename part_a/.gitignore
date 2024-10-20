@@ -2,3 +2,4 @@ objs/
 runtasks
 runtasks.*
 .vscode/
+.DS_Store
