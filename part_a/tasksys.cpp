@@ -49,7 +49,7 @@ void * runTaskWrapperA3(void * args) {
     RunTask cur_task, next_task;
     bool runnable;
 
-    while (true) {
+    while (!*(taskArgs->done)) {
         runnable = false;
         pthread_mutex_lock(taskArgs->mutex_lock);
         if (!taskArgs->work_queue->empty()) {
@@ -64,18 +64,23 @@ void * runTaskWrapperA3(void * args) {
                 if (cur_task.task_id == cur_task.num_total_tasks + taskArgs->num_threads - 1) {
                     pthread_cond_signal(taskArgs->all_threads_done);
                 }
+                // printf("Thread %d waiting on run complete\n", taskArgs->thread_id);
                 pthread_cond_wait(taskArgs->run_complete, taskArgs->mutex_lock);
             }
         } else {
+            // printf("Thread %d waiting on queue add\n", taskArgs->thread_id);
             pthread_cond_wait(taskArgs->queue_add, taskArgs->mutex_lock);
         }
         pthread_mutex_unlock(taskArgs->mutex_lock);
 
         if (runnable) {
-            printf("Thread %d running task %d of %d with queue size %zu\n", taskArgs->thread_id, cur_task.task_id, cur_task.num_total_tasks, taskArgs->work_queue->size());
+            // printf("Thread %d running task %d of %d with queue size %zu\n", taskArgs->thread_id, cur_task.task_id, cur_task.num_total_tasks, taskArgs->work_queue->size());
             cur_task.runnable->runTask(cur_task.task_id, cur_task.num_total_tasks);
         }
     }
+    // printf("Thread %d returned\n", taskArgs->thread_id);
+
+    return NULL;
 }
 
 
@@ -189,25 +194,18 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
-
     _num_threads = num_threads;
 
-    _done = (bool *)malloc(sizeof(bool));
+    _done = (bool *) malloc(sizeof(bool));
     *_done = false;
 
-
-    // Initialize threads - alloc memory
     _thread_pool = (pthread_t *) malloc(_num_threads * sizeof(pthread_t));
 
-    // Initialize mutex
     pthread_mutex_init(&_mutex_lock, NULL);
 
-    // Setup "isRunning" array
     _is_running = (bool *) malloc(_num_threads * sizeof(bool));
 
-
-    // Setup args
-    _args = (TaskArgsA2 *)malloc(_num_threads*sizeof(TaskArgsA2));
+    _args = (TaskArgsA2 *) malloc(_num_threads * sizeof(TaskArgsA2));
 
     // PThread create
     for (int i = 0; i < _num_threads; i++) {
@@ -221,7 +219,6 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
 }
 
 TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {
-
     // Print pointer to done
     *_done = true;
 
@@ -230,7 +227,10 @@ TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {
         pthread_join(_thread_pool[i], NULL);
     }
 
+    pthread_mutex_destroy(&_mutex_lock);
+
     // Free memory
+    free(_done);
     free(_thread_pool);
     free(_is_running);
     free(_args);
@@ -296,8 +296,10 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
-
     _num_threads = num_threads;
+
+    _done = (bool *) malloc(sizeof(bool));
+    *_done = false;
 
     _thread_pool = (pthread_t *) malloc(_num_threads * sizeof(pthread_t));
 
@@ -306,12 +308,13 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
     pthread_cond_init(&_all_threads_done, NULL);
     pthread_cond_init(&_run_complete, NULL);
 
-    _args = (TaskArgsA3 *)malloc(_num_threads*sizeof(TaskArgsA3));
+    _args = (TaskArgsA3 *) malloc(_num_threads * sizeof(TaskArgsA3));
 
     // PThread create
     for (int i = 0; i < _num_threads; i++) {
         _args[i].thread_id = i;
         _args[i].num_threads = _num_threads;
+        _args[i].done = _done;
         _args[i].work_queue = &_work_queue;
         _args[i].mutex_lock = &_mutex_lock;
         _args[i].queue_add = &_queue_add;
@@ -319,6 +322,7 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
         _args[i].run_complete = &_run_complete;
         pthread_create(&_thread_pool[i], NULL, runTaskWrapperA3, &_args[i]);
     }
+    // printf("Threads init\n");
 }
 
 TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
@@ -328,9 +332,25 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
+    *_done = true;
 
+    // Join threads
+    // printf("Joining threads\n");
+    for (int i = 0; i < _num_threads; i++) {
+        pthread_cond_broadcast(&_queue_add);
+        pthread_join(_thread_pool[i], NULL);
+    }
+    // printf("Threads joined\n");
+
+    pthread_mutex_destroy(&_mutex_lock);
+    pthread_cond_destroy(&_queue_add);
+    pthread_cond_destroy(&_all_threads_done);
+    pthread_cond_destroy(&_run_complete);
+
+    free(_done);
     free(_thread_pool);
     free(_args);
+    // printf("All destroyed\n");
 }
 
 void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_total_tasks) {
@@ -344,9 +364,6 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
     pthread_mutex_lock(&_mutex_lock);
     _work_queue.push(first_task);
     pthread_cond_signal(&_queue_add);
-    pthread_mutex_unlock(&_mutex_lock);
-
-    pthread_mutex_lock(&_mutex_lock);
     pthread_cond_wait(&_all_threads_done, &_mutex_lock);
     if (!_work_queue.empty()) {
         _work_queue.pop();

@@ -32,6 +32,7 @@ struct TaskArgsA2 {
 struct TaskArgsA3 {
     int thread_id;
     int num_threads;
+    bool *done;
     std::queue<RunTask> *work_queue;
     pthread_mutex_t *mutex_lock;
     pthread_cond_t *queue_add;
@@ -124,6 +125,7 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         TaskArgsA3 * _args;
         pthread_t * _thread_pool;
         int _num_threads;
+        bool *_done;
 
     public:
         TaskSystemParallelThreadPoolSleeping(int num_threads);
