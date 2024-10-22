@@ -255,14 +255,14 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
         pthread_mutex_lock(&_mutex_lock);
 
         if (!_work_queue.empty()) {
-            is_running = true;
-            cur_task = _work_queue.front();
+//          is_running = true;
+//          cur_task = _work_queue.front();
 
-            if (cur_task.task_id + TASKS_PER_THREAD < cur_task.num_total_tasks) {
-                _work_queue.front().task_id++;
-            } else {
-                _work_queue.pop();
-            }
+//          if (cur_task.task_id + TASKS_PER_THREAD < cur_task.num_total_tasks) {
+//              _work_queue.front().task_id++;
+//          } else {
+//              _work_queue.pop();
+//          }
         } else {
             bool any_running = false;
             for (int i = 0; i < _num_threads; i++) {
