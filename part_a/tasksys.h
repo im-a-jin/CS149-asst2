@@ -6,6 +6,7 @@
 #include "stdlib.h"
 #include <queue>
 #include <algorithm>
+#include <atomic>
 
 #define TASKS_PER_THREAD 1
 
@@ -14,7 +15,6 @@ struct RunTask {
     int task_id;
     int num_total_tasks;
 };
-
 
 struct TaskArgsA1 {
     IRunnable* runnable;
