@@ -10,14 +10,14 @@
 #define TASKS_PER_THREAD 1
 
 struct RunTask {
-    IRunnable* runnable;
+    IRunnable *runnable;
     int task_id;
     int num_total_tasks;
 };
 
 
 struct TaskArgsA1 {
-    IRunnable* runnable;
+    IRunnable *runnable;
     int thread_id;
     int num_total_tasks;
     std::atomic<int> *task_id;
@@ -25,10 +25,11 @@ struct TaskArgsA1 {
 
 struct TaskArgsA2 {
     int thread_id;
-    bool *is_running;
     bool *done;
-    std::queue<RunTask> *work_queue;
-    pthread_mutex_t *mutex_lock;
+    std::atomic<int> *task_id;
+    std::atomic<int> *tasks_done;
+    IRunnable *runnable;
+    int *num_total_tasks;
 };
 
 struct TaskArgsA3 {
@@ -93,15 +94,15 @@ class TaskSystemParallelSpawn: public ITaskSystem {
  * documentation of the ITaskSystem interface.
  */
 class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
-
     private:
-        std::queue<RunTask> _work_queue;
-        pthread_mutex_t _mutex_lock;
-        bool * _is_running;
+        int _num_threads;
         bool *_done;
         TaskArgsA2 * _args;
-        pthread_t * _thread_pool;
-        int _num_threads;
+        pthread_t *_thread_pool;
+        std::atomic<int> _task_id;
+        std::atomic<int> _tasks_done;
+        IRunnable *_runnable;
+        int _num_total_tasks;
 
     public:
         TaskSystemParallelThreadPoolSpinning(int num_threads);

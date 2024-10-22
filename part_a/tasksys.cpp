@@ -5,8 +5,8 @@ IRunnable::~IRunnable() {}
 ITaskSystem::ITaskSystem(int num_threads) {}
 ITaskSystem::~ITaskSystem() {}
 
-void * runTaskWrapperA1(void * args) {
-    TaskArgsA1 * taskArgs = (TaskArgsA1 *) args;
+void * runTaskWrapperA1(void *args) {
+    TaskArgsA1 *taskArgs = (TaskArgsA1 *) args;
     int task_id = taskArgs->task_id->fetch_add(1);
     while (task_id < taskArgs->num_total_tasks) {
         (taskArgs->runnable)->runTask(task_id, taskArgs->num_total_tasks);
@@ -15,34 +15,28 @@ void * runTaskWrapperA1(void * args) {
     return NULL;
 }
 
-// Minimize time spent holding each lock
-void * runTaskWrapperA2(void * args) {
+void * runTaskWrapperA2(void *args) {
     TaskArgsA2 *taskArgs = (TaskArgsA2 *) args;
-    RunTask cur_task, next_task;
-
+    int task_id = taskArgs->thread_id;
     while (!*(taskArgs->done)) {
-        pthread_mutex_lock(taskArgs->mutex_lock);
-        taskArgs->is_running[taskArgs->thread_id] = false;
-
-        if (!taskArgs->work_queue->empty()) {
-            taskArgs->is_running[taskArgs->thread_id] = true;
-            cur_task = taskArgs->work_queue->front();
-            taskArgs->work_queue->pop();
-
-            if (cur_task.task_id + TASKS_PER_THREAD < cur_task.num_total_tasks) {
-                next_task = {cur_task.runnable, cur_task.task_id + TASKS_PER_THREAD, cur_task.num_total_tasks};
-                taskArgs->work_queue->push(next_task);
-            }
+        while (!(*(taskArgs->num_total_tasks) == 0 && taskArgs->runnable == NULL));
+        while (task_id < *(taskArgs->num_total_tasks)) {
+            task_id = taskArgs->task_id->fetch_add(1);
+            printf("Thread %d takes task_id %d\n", taskArgs->thread_id, task_id); 
+            (taskArgs->runnable)->runTask(task_id, *(taskArgs->num_total_tasks));
         }
-        pthread_mutex_unlock(taskArgs->mutex_lock);
+        if (task_id >= *(taskArgs->num_total_tasks)) {
+            int tasks_done = *(taskArgs->tasks_done);
+            printf("Thread %d is done with %d of %d. So far %d done\n", taskArgs->thread_id, task_id, *(taskArgs->num_total_tasks), tasks_done);
 
-        if (taskArgs->is_running[taskArgs->thread_id]) {
-            for (int i = 0; i < std::min(TASKS_PER_THREAD, cur_task.num_total_tasks-cur_task.task_id); i++) {
-                cur_task.runnable->runTask(cur_task.task_id + i, cur_task.num_total_tasks);
-            }
+            taskArgs->tasks_done->fetch_add(1, std::memory_order_relaxed);
+            while (*(taskArgs->tasks_done) > 0);
+            task_id = taskArgs->thread_id;
+
+//          tasks_done = *(taskArgs->tasks_done);
+//          printf("Resuming with %d done and %d tasks\n", tasks_done, *(taskArgs->num_total_tasks));
         }
     }
-
     return NULL;
 }
 
@@ -151,6 +145,7 @@ void TaskSystemParallelSpawn::run(IRunnable* runnable, int num_total_tasks) {
 
     pthread_t *threads = (pthread_t *) malloc(_num_threads * sizeof(pthread_t));
     TaskArgsA1 *args = (TaskArgsA1 *) malloc(_num_threads * sizeof(TaskArgsA1));
+
     _task_id = 0;
 
     for (int i = 0; i < _num_threads; i++) {
@@ -197,32 +192,33 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
+
     _num_threads = num_threads;
+
+    _task_id = 0;
+    _tasks_done = 0;
+    _num_total_tasks = 0;
+    _runnable = NULL;
 
     _done = (bool *) malloc(sizeof(bool));
     *_done = false;
 
     _thread_pool = (pthread_t *) malloc(_num_threads * sizeof(pthread_t));
-
-    pthread_mutex_init(&_mutex_lock, NULL);
-
-    _is_running = (bool *) malloc(_num_threads * sizeof(bool));
-
     _args = (TaskArgsA2 *) malloc(_num_threads * sizeof(TaskArgsA2));
 
     // PThread create
     for (int i = 0; i < _num_threads; i++) {
         _args[i].thread_id = i;
-        _args[i].is_running = _is_running;
         _args[i].done = _done;
-        _args[i].work_queue = &_work_queue;
-        _args[i].mutex_lock = &_mutex_lock;
+        _args[i].task_id = &_task_id;
+        _args[i].tasks_done = &_tasks_done;
+        _args[i].runnable = _runnable;
+        _args[i].num_total_tasks = &_num_total_tasks;
         pthread_create(&_thread_pool[i], NULL, runTaskWrapperA2, &_args[i]);
     }
 }
 
 TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {
-    // Print pointer to done
     *_done = true;
 
     // Join threads
@@ -230,12 +226,9 @@ TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {
         pthread_join(_thread_pool[i], NULL);
     }
 
-    pthread_mutex_destroy(&_mutex_lock);
-
     // Free memory
     free(_done);
     free(_thread_pool);
-    free(_is_running);
     free(_args);
 }
 
@@ -245,43 +238,24 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
     // method in Part A.  The implementation provided below runs all
     // tasks sequentially on the calling thread.
     //
-    RunTask cur_task = {runnable, 0, num_total_tasks}, next_task;
-    bool is_running;
+    _runnable = runnable;
+    _num_total_tasks = num_total_tasks;
 
-    pthread_mutex_lock(&_mutex_lock);
-    _work_queue.push(cur_task);
-    pthread_mutex_unlock(&_mutex_lock);
+    _tasks_done = 0;
 
+//  int task_id = _task_id.fetch_add(1);
     while (!(*_done)) {
-        is_running = false;
-        pthread_mutex_lock(&_mutex_lock);
-
-        if (!_work_queue.empty()) {
-            is_running = true;
-            cur_task = _work_queue.front();
-            _work_queue.pop();
-
-            if (cur_task.task_id + TASKS_PER_THREAD < cur_task.num_total_tasks) {
-                next_task = {cur_task.runnable, cur_task.task_id + TASKS_PER_THREAD, cur_task.num_total_tasks};
-                _work_queue.push(next_task);
-            }
-        } else {
-            bool any_running = false;
-            for (int i = 0; i < _num_threads; i++) {
-                any_running |= _is_running[i];
-            }
-
-            if (!any_running) {
-                pthread_mutex_unlock(&_mutex_lock);
-                break;
-            }
-        }
-        pthread_mutex_unlock(&_mutex_lock);
-
-        if (is_running) {
-            for (int i = 0; i < std::min(TASKS_PER_THREAD, cur_task.num_total_tasks-cur_task.task_id); i++) {
-                cur_task.runnable->runTask(cur_task.task_id + i, cur_task.num_total_tasks);
-            }
+//      while (task_id < num_total_tasks) {
+//          runnable->runTask(_task_id, num_total_tasks);
+//          task_id = _task_id.fetch_add(1);
+//      }
+        if (_task_id >= num_total_tasks && _tasks_done == _num_threads) {
+            int tasks_done = _tasks_done;
+            printf("%d\n", tasks_done);
+            _task_id = 0;
+            _num_total_tasks = 0;
+            _runnable = NULL;
+            break;
         }
     }
 }
