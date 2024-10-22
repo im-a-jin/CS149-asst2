@@ -93,7 +93,6 @@ class TaskSystemParallelSpawn: public ITaskSystem {
  * documentation of the ITaskSystem interface.
  */
 class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
-
     private:
         std::queue<RunTask> _work_queue;
         pthread_mutex_t _mutex_lock;

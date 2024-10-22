@@ -21,17 +21,18 @@ void * runTaskWrapperA2(void * args) {
     RunTask cur_task, next_task;
 
     while (!*(taskArgs->done)) {
-        pthread_mutex_lock(taskArgs->mutex_lock);
         taskArgs->is_running[taskArgs->thread_id] = false;
 
+        pthread_mutex_lock(taskArgs->mutex_lock);
         if (!taskArgs->work_queue->empty()) {
             taskArgs->is_running[taskArgs->thread_id] = true;
             cur_task = taskArgs->work_queue->front();
-            taskArgs->work_queue->pop();
 
             if (cur_task.task_id + TASKS_PER_THREAD < cur_task.num_total_tasks) {
                 next_task = {cur_task.runnable, cur_task.task_id + TASKS_PER_THREAD, cur_task.num_total_tasks};
-                taskArgs->work_queue->push(next_task);
+                (taskArgs->work_queue->front()).task_id++;
+            } else {
+                taskArgs->work_queue->pop();
             }
         }
         pthread_mutex_unlock(taskArgs->mutex_lock);
