@@ -27,8 +27,8 @@ struct TaskArgsA2 {
     int thread_id;
     bool *done;
     std::atomic<int> *task_id;
-    std::atomic<int> *tasks_done;
-    IRunnable *runnable;
+    std::atomic<int> *threads_done;
+    IRunnable **runnable;
     int *num_total_tasks;
 };
 
@@ -100,7 +100,7 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
         TaskArgsA2 * _args;
         pthread_t *_thread_pool;
         std::atomic<int> _task_id;
-        std::atomic<int> _tasks_done;
+        std::atomic<int> _threads_done;
         IRunnable *_runnable;
         int _num_total_tasks;
 

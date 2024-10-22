@@ -17,24 +17,21 @@ void * runTaskWrapperA1(void *args) {
 
 void * runTaskWrapperA2(void *args) {
     TaskArgsA2 *taskArgs = (TaskArgsA2 *) args;
-    int task_id = taskArgs->thread_id;
     while (!*(taskArgs->done)) {
-        while (!(*(taskArgs->num_total_tasks) == 0 && taskArgs->runnable == NULL));
-        while (task_id < *(taskArgs->num_total_tasks)) {
-            task_id = taskArgs->task_id->fetch_add(1);
-            printf("Thread %d takes task_id %d\n", taskArgs->thread_id, task_id); 
-            (taskArgs->runnable)->runTask(task_id, *(taskArgs->num_total_tasks));
-        }
-        if (task_id >= *(taskArgs->num_total_tasks)) {
-            int tasks_done = *(taskArgs->tasks_done);
-            printf("Thread %d is done with %d of %d. So far %d done\n", taskArgs->thread_id, task_id, *(taskArgs->num_total_tasks), tasks_done);
+        if (*(taskArgs->num_total_tasks) != 0 && *(taskArgs->runnable) != NULL) {
+            int task_id = taskArgs->task_id->fetch_add(1);
+            if (task_id < *(taskArgs->num_total_tasks)) {
+//              printf("Thread %d runs task_id %d\n", taskArgs->thread_id, task_id); 
+                (*(taskArgs->runnable))->runTask(task_id, *(taskArgs->num_total_tasks));
+            } else {
+//              printf("Thread %d is done with %d of %d\n", taskArgs->thread_id, task_id, *(taskArgs->num_total_tasks));
 
-            taskArgs->tasks_done->fetch_add(1, std::memory_order_relaxed);
-            while (*(taskArgs->tasks_done) > 0);
-            task_id = taskArgs->thread_id;
+                taskArgs->threads_done->fetch_add(1);
+                while (*(taskArgs->num_total_tasks) != 0 && *(taskArgs->runnable) != NULL);
+                taskArgs->threads_done->fetch_sub(1);
 
-//          tasks_done = *(taskArgs->tasks_done);
-//          printf("Resuming with %d done and %d tasks\n", tasks_done, *(taskArgs->num_total_tasks));
+//              printf("Resuming thread %d with %d done and %d tasks\n", taskArgs->thread_id, int(*(taskArgs->threads_done)), *(taskArgs->num_total_tasks));
+            }
         }
     }
     return NULL;
@@ -196,7 +193,7 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
     _num_threads = num_threads;
 
     _task_id = 0;
-    _tasks_done = 0;
+    _threads_done = 0;
     _num_total_tasks = 0;
     _runnable = NULL;
 
@@ -211,8 +208,8 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
         _args[i].thread_id = i;
         _args[i].done = _done;
         _args[i].task_id = &_task_id;
-        _args[i].tasks_done = &_tasks_done;
-        _args[i].runnable = _runnable;
+        _args[i].threads_done = &_threads_done;
+        _args[i].runnable = &_runnable;
         _args[i].num_total_tasks = &_num_total_tasks;
         pthread_create(&_thread_pool[i], NULL, runTaskWrapperA2, &_args[i]);
     }
@@ -220,6 +217,7 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
 
 TaskSystemParallelThreadPoolSpinning::~TaskSystemParallelThreadPoolSpinning() {
     *_done = true;
+    _threads_done = 0;
 
     // Join threads
     for (int i = 0; i < _num_threads; i++) {
@@ -238,10 +236,10 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
     // method in Part A.  The implementation provided below runs all
     // tasks sequentially on the calling thread.
     //
+//  printf("Run start.\n");
+        
     _runnable = runnable;
     _num_total_tasks = num_total_tasks;
-
-    _tasks_done = 0;
 
 //  int task_id = _task_id.fetch_add(1);
     while (!(*_done)) {
@@ -249,12 +247,12 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
 //          runnable->runTask(_task_id, num_total_tasks);
 //          task_id = _task_id.fetch_add(1);
 //      }
-        if (_task_id >= num_total_tasks && _tasks_done == _num_threads) {
-            int tasks_done = _tasks_done;
-            printf("%d\n", tasks_done);
+//      printf("%d\t%d\t%d\t%d\n", int(_task_id), int(_threads_done), num_total_tasks, _num_threads);
+        if (_threads_done == _num_threads) {
             _task_id = 0;
             _num_total_tasks = 0;
             _runnable = NULL;
+            while (_threads_done == _num_threads);
             break;
         }
     }
