@@ -4,6 +4,8 @@
 #include "itasksys.h"
 #include <unordered_map>
 #include <deque>
+#include "pthread.h"
+#include "stdlib.h"
 
 
 /*
