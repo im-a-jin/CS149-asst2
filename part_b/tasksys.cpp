@@ -140,7 +140,8 @@ TaskGraph::TaskGraph() {
     // Init data structures
     //_task_graph = std::unordered_map<TaskID, TaskGraphNode>();
     _task_graph = std::vector<TaskGraphNode>();
-    _ready_tasks = std::deque<TaskID>();
+    _ready_tasks = std::vector<TaskID>();
+    _rt_n_done = 0;
 }
 
 TaskGraph::~TaskGraph() {
@@ -289,12 +290,12 @@ WorkUnit TaskGraph::getNextWorkUnitInner() {
 
     WorkUnit wu;
 
-    if (_ready_tasks.empty()) {
+    if (_ready_tasks.size() == _rt_n_done) { // e.g. got 3, done 3
         // No work to do: Return sentinel
         wu.task_id = NO_TASK;
     } else {
         // Get next task ID
-        int task_id = _ready_tasks.front();
+        int task_id = _ready_tasks[_rt_n_done]; // #done is also the index of the next task
         WorkUnit& tg_wu = _task_graph[task_id].work_unit;
 
         // Setup work unit
@@ -308,7 +309,8 @@ WorkUnit TaskGraph::getNextWorkUnitInner() {
 
         // Pop task from ready tasks if we just assigned the last subtask
         if (tg_wu.subtask_id == tg_wu.num_total_tasks) {
-            _ready_tasks.pop_front();
+            _ready_tasks[_rt_n_done] = NO_TASK;
+            _rt_n_done++;
         }
     }
 

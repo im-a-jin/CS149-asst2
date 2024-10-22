@@ -3,7 +3,6 @@
 
 #include "itasksys.h"
 #include <unordered_map>
-#include <deque>
 #include <cassert>
 #include <climits>
 #include "pthread.h"
@@ -118,7 +117,8 @@ class TaskGraph {
 
         // Push tasks on back, pop from front
         // Invariant: Tasks popped as soon as the last subtask is assigned
-        std::deque<TaskID> _ready_tasks; 
+        std::vector<TaskID> _ready_tasks; 
+        int _rt_n_done; // Number of tasks done in ready_tasks
 
         // Assumes lock is in place
         WorkUnit getNextWorkUnitInner(); 
