@@ -244,26 +244,15 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
     // tasks sequentially on the calling thread.
     //
     RunTask cur_task = {runnable, 0, num_total_tasks};
-    bool is_running;
 
     pthread_mutex_lock(&_mutex_lock);
     _work_queue.push(cur_task);
     pthread_mutex_unlock(&_mutex_lock);
 
     while (!(*_done)) {
-        is_running = false;
         pthread_mutex_lock(&_mutex_lock);
 
-        if (!_work_queue.empty()) {
-//          is_running = true;
-//          cur_task = _work_queue.front();
-
-//          if (cur_task.task_id + TASKS_PER_THREAD < cur_task.num_total_tasks) {
-//              _work_queue.front().task_id++;
-//          } else {
-//              _work_queue.pop();
-//          }
-        } else {
+        if (_work_queue.empty()) {
             bool any_running = false;
             for (int i = 0; i < _num_threads; i++) {
                 any_running |= _is_running[i];
@@ -275,12 +264,6 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
             }
         }
         pthread_mutex_unlock(&_mutex_lock);
-
-        if (is_running) {
-            for (int i = 0; i < std::min(TASKS_PER_THREAD, cur_task.num_total_tasks-cur_task.task_id); i++) {
-                cur_task.runnable->runTask(cur_task.task_id + i, cur_task.num_total_tasks);
-            }
-        }
     }
 }
 
