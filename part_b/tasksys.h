@@ -112,7 +112,8 @@ class TaskGraph {
         int _completed_tasks_counter;
 
         // Internal graph storage object
-        std::unordered_map<TaskID, TaskGraphNode> _task_graph;
+        //std::unordered_map<TaskID, TaskGraphNode> _task_graph;
+        std::vector<TaskGraphNode> _task_graph;
 
         // Push tasks on back, pop from front
         // Invariant: Tasks popped as soon as the last subtask is assigned

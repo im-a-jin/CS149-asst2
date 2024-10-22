@@ -124,6 +124,9 @@ void TaskSystemParallelThreadPoolSpinning::sync() {
  * ================================================================
  */
 
+#define NO_TASK -1
+#define SHUTDOWN_TASK -2
+
 TaskGraph::TaskGraph() {
     // State variables
     _task_id_counter = 0;
@@ -135,7 +138,8 @@ TaskGraph::TaskGraph() {
     pthread_cond_init(&_all_tasks_done, NULL);
 
     // Init data structures
-    _task_graph = std::unordered_map<TaskID, TaskGraphNode>();
+    //_task_graph = std::unordered_map<TaskID, TaskGraphNode>();
+    _task_graph = std::vector<TaskGraphNode>();
     _ready_tasks = std::deque<TaskID>();
 }
 
@@ -167,7 +171,8 @@ TaskID TaskGraph::addTask(IRunnable* runnable, int num_total_tasks, const std::v
     tgn.work_unit.task_id = cur_tid;
 
     // Add node to graph
-    _task_graph[cur_tid] = tgn;
+    //_task_graph[cur_tid] = tgn;
+    _task_graph.push_back(tgn);
 
     // Process task's dependencies
     for (TaskID dep : deps) {
@@ -199,7 +204,7 @@ TaskID TaskGraph::addTask(IRunnable* runnable, int num_total_tasks, const std::v
 WorkUnit TaskGraph::markComplete(TaskID task, int subtask_id) {
     // Receives the completion of a subtask, updates graph state,
     // and returns the next unit of work to be done, if any
-    // (If no work, task_id will be -1)
+    // (If no work, task_id will be NO_TASK)
 
     // printf("TaskGraph::markComplete: Task %d, subtask %d\n", task, subtask_id);
 
@@ -252,7 +257,7 @@ WorkUnit TaskGraph::markComplete(TaskID task, int subtask_id) {
 
 WorkUnit TaskGraph::getNextWorkUnit() {
     // Returns the next unit of work to be done, if any
-    // (If no work, task_id will be -1)
+    // (If no work, task_id will be NO_TASK)
     WorkUnit wu;
 
     // <CRITICAL_SECTION>
@@ -261,7 +266,7 @@ WorkUnit TaskGraph::getNextWorkUnit() {
     while (true) { // Loop to handle spurious wakeups
         // Run once first for the sync case
         wu = getNextWorkUnitInner();
-        if (wu.task_id != -1) {
+        if (wu.task_id != NO_TASK) {
             // Found work, return it
             break;
         } else {
@@ -273,7 +278,7 @@ WorkUnit TaskGraph::getNextWorkUnit() {
     pthread_mutex_unlock(&_tg_lock);
     // </CRITICAL_SECTION>
 
-    assert(wu.task_id != -1);
+    assert(wu.task_id != NO_TASK);
     return wu;
 }
 
@@ -286,7 +291,7 @@ WorkUnit TaskGraph::getNextWorkUnitInner() {
 
     if (_ready_tasks.empty()) {
         // No work to do: Return sentinel
-        wu.task_id = -1;
+        wu.task_id = NO_TASK;
     } else {
         // Get next task ID
         int task_id = _ready_tasks.front();
@@ -341,15 +346,15 @@ void TaskGraph::shutdown() {
     // Setup special sentinel work unit
     // Thread workers exit when they receive this task ID
     WorkUnit wu_shutdown;
-    wu_shutdown.task_id = -2;
+    wu_shutdown.task_id = SHUTDOWN_TASK;
     wu_shutdown.subtask_id = 0;
-    wu_shutdown.num_total_tasks = 10000;
+    wu_shutdown.num_total_tasks = INT_MAX;
 
     // <CRITICAL_SECTION>
     pthread_mutex_lock(&_tg_lock);
 
     // Add sentinel to work queue, broadcast to all threads
-    _ready_tasks.push_back(-2);
+    _ready_tasks.push_back(SHUTDOWN_TASK);
     pthread_cond_broadcast(&_task_received);
 
     pthread_mutex_unlock(&_tg_lock);
@@ -371,13 +376,13 @@ void TaskGraph::shutdown() {
 void* threadWorkerB(void *args) {
     TaskGraph *tg = (TaskGraph *) args;
     WorkUnit wu;
-    wu.task_id = -1;
+    wu.task_id = NO_TASK;
 
     while (true) {
-        if (wu.task_id == -1) {
+        if (wu.task_id == NO_TASK) {
             // Get the next work unit
             wu = tg->getNextWorkUnit();
-        } else if (wu.task_id == -2) {
+        } else if (wu.task_id == SHUTDOWN_TASK) {
             // Received done sentinel, exit
             // printf("threadWorkerB: Received done sentinel, exiting\n");
             break;
