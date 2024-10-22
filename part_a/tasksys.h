@@ -20,7 +20,7 @@ struct TaskArgsA1 {
     IRunnable* runnable;
     int thread_id;
     int num_total_tasks;
-    int num_threads;
+    std::atomic<int> *task_id;
 };
 
 struct TaskArgsA2 {
@@ -74,6 +74,7 @@ class TaskSystemSerial: public ITaskSystem {
 class TaskSystemParallelSpawn: public ITaskSystem {
     private:
         int _num_threads;
+        std::atomic<int> _task_id;
 
     public:
         TaskSystemParallelSpawn(int num_threads);

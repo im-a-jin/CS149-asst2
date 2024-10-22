@@ -7,15 +7,15 @@ ITaskSystem::~ITaskSystem() {}
 
 void * runTaskWrapperA1(void * args) {
     TaskArgsA1 * taskArgs = (TaskArgsA1 *) args;
-    int thread_id = taskArgs->thread_id;
-    int num_total_tasks = taskArgs->num_total_tasks;
-    int num_threads = taskArgs->num_threads;
-    for (int i = thread_id; i < num_total_tasks; i += num_threads) {
-      (taskArgs->runnable)->runTask(i, num_total_tasks);
+    int task_id = taskArgs->task_id->fetch_add(1);
+    while (task_id < taskArgs->num_total_tasks) {
+        (taskArgs->runnable)->runTask(task_id, taskArgs->num_total_tasks);
+        task_id = taskArgs->task_id->fetch_add(1);
     }
     return NULL;
 }
 
+// Minimize time spent holding each lock
 void * runTaskWrapperA2(void * args) {
     TaskArgsA2 *taskArgs = (TaskArgsA2 *) args;
     RunTask cur_task, next_task;
@@ -151,15 +151,15 @@ void TaskSystemParallelSpawn::run(IRunnable* runnable, int num_total_tasks) {
 
     pthread_t *threads = (pthread_t *) malloc(_num_threads * sizeof(pthread_t));
     TaskArgsA1 *args = (TaskArgsA1 *) malloc(_num_threads * sizeof(TaskArgsA1));
+    _task_id = 0;
 
     for (int i = 0; i < _num_threads; i++) {
         args[i].runnable = runnable;
         args[i].thread_id = i;
         args[i].num_total_tasks = num_total_tasks;
-        args[i].num_threads = _num_threads;
+        args[i].task_id = &_task_id;
         pthread_create(&threads[i], NULL, runTaskWrapperA1, &args[i]);
     }
-    // runnable->runTask(0, num_total_tasks);
 
     for (int i = 0; i < _num_threads; i++) {
         pthread_join(threads[i], NULL);
