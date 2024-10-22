@@ -18,7 +18,7 @@ void * runTaskWrapperA1(void * args) {
 // Minimize time spent holding each lock
 void * runTaskWrapperA2(void * args) {
     TaskArgsA2 *taskArgs = (TaskArgsA2 *) args;
-    RunTask cur_task, next_task;
+    RunTask cur_task;
 
     while (!*(taskArgs->done)) {
         taskArgs->is_running[taskArgs->thread_id] = false;
@@ -29,7 +29,6 @@ void * runTaskWrapperA2(void * args) {
             cur_task = taskArgs->work_queue->front();
 
             if (cur_task.task_id + TASKS_PER_THREAD < cur_task.num_total_tasks) {
-                next_task = {cur_task.runnable, cur_task.task_id + TASKS_PER_THREAD, cur_task.num_total_tasks};
                 (taskArgs->work_queue->front()).task_id++;
             } else {
                 taskArgs->work_queue->pop();
@@ -246,7 +245,7 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
     // method in Part A.  The implementation provided below runs all
     // tasks sequentially on the calling thread.
     //
-    RunTask cur_task = {runnable, 0, num_total_tasks}, next_task;
+    RunTask cur_task = {runnable, 0, num_total_tasks};
     bool is_running;
 
     pthread_mutex_lock(&_mutex_lock);
@@ -260,11 +259,11 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
         if (!_work_queue.empty()) {
             is_running = true;
             cur_task = _work_queue.front();
-            _work_queue.pop();
 
             if (cur_task.task_id + TASKS_PER_THREAD < cur_task.num_total_tasks) {
-                next_task = {cur_task.runnable, cur_task.task_id + TASKS_PER_THREAD, cur_task.num_total_tasks};
-                _work_queue.push(next_task);
+                _work_queue.front().task_id++;
+            } else {
+                _work_queue.pop();
             }
         } else {
             bool any_running = false;
