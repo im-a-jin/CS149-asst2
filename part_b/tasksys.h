@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <deque>
 #include <cassert>
+#include <climits>
 #include "pthread.h"
 #include "stdlib.h"
 
