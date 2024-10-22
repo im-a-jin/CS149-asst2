@@ -124,6 +124,7 @@ void TaskSystemParallelThreadPoolSpinning::sync() {
  * ================================================================
  */
 
+#define MAX_TASK_CHUNKING 4
 #define NO_TASK -1
 #define SHUTDOWN_TASK -2
 
@@ -156,9 +157,19 @@ TaskGraph::~TaskGraph() {
 TaskID TaskGraph::addTask(IRunnable* runnable, int num_total_tasks, const std::vector<TaskID>& deps) {
     // Adds a new task to the graph, managing graph state and subscribers
 
+    // Calculate subtask allocation
+    int n_subtasks_per_worker = 1;
+    if (num_total_tasks > n_workers) {
+        n_subtasks_per_worker = num_total_tasks / n_workers;
+        if (n_subtasks_per_worker > MAX_TASK_CHUNKING) {
+            n_subtasks_per_worker = MAX_TASK_CHUNKING;
+        }
+    }
+    // printf("TaskGraph::addTask: %d subtasks per worker\n", n_subtasks_per_worker);
+
     // Prep new task node
     TaskGraphNode tgn;
-    tgn.work_unit = WorkUnit{0, 0, num_total_tasks, runnable};
+    tgn.work_unit = WorkUnit{0, 0, n_subtasks_per_worker, num_total_tasks, runnable};
     tgn.n_dependencies = deps.size();
     tgn.dependents = std::vector<TaskID>();
     tgn.n_subtasks_done = 0;
@@ -191,7 +202,7 @@ TaskID TaskGraph::addTask(IRunnable* runnable, int num_total_tasks, const std::v
         _ready_tasks.push_back(cur_tid);
     }
 
-    // printf("TaskGraph::addTask: Added task %d: %d tasks, %d deps\n", cur_tid, num_total_tasks, tgn.n_dependencies);
+    // printf("TaskGraph::addTask: Added task %d: %d subtasks, %d deps\n", cur_tid, num_total_tasks, tgn.n_dependencies);
 
     // Broadcast that a task was added
     pthread_cond_broadcast(&_task_received);
@@ -202,12 +213,17 @@ TaskID TaskGraph::addTask(IRunnable* runnable, int num_total_tasks, const std::v
     return cur_tid;
 }
 
-WorkUnit TaskGraph::markComplete(TaskID task, int subtask_id) {
+WorkUnit TaskGraph::markComplete(WorkUnit wu_done) {
     // Receives the completion of a subtask, updates graph state,
     // and returns the next unit of work to be done, if any
     // (If no work, task_id will be NO_TASK)
 
-    // printf("TaskGraph::markComplete: Task %d, subtask %d\n", task, subtask_id);
+
+    TaskID task = wu_done.task_id;
+    int subtask_id = wu_done.subtask_id;
+    int num_subtasks_to_run = wu_done.num_subtasks_to_run;
+    // printf("TaskGraph::markComplete: Task %d, subtask %d-%d is done\n", task, subtask_id, subtask_id + num_subtasks_to_run - 1);
+
 
     // <CRITICAL_SECTION>
     pthread_mutex_lock(&_tg_lock);
@@ -217,7 +233,7 @@ WorkUnit TaskGraph::markComplete(TaskID task, int subtask_id) {
     WorkUnit wu;
 
     // Update subtask count
-    tgn.n_subtasks_done++;
+    tgn.n_subtasks_done += wu_done.num_subtasks_to_run;
 
     // Was this the last subtask?
     if (tgn.n_subtasks_done == tgn.work_unit.num_total_tasks) {
@@ -299,13 +315,16 @@ WorkUnit TaskGraph::getNextWorkUnitInner() {
         WorkUnit& tg_wu = _task_graph[task_id].work_unit;
 
         // Setup work unit
-        wu.task_id = task_id;
+        int n_subtasks_left = tg_wu.num_total_tasks - tg_wu.subtask_id; // e.g. 4 tasks, ID 1 = 3 left
+
+        wu.task_id = tg_wu.task_id; // Must get this from tg_wu for special shutdown case
         wu.subtask_id = tg_wu.subtask_id;
+        wu.num_subtasks_to_run = (n_subtasks_left < tg_wu.num_subtasks_to_run) ? n_subtasks_left : tg_wu.num_subtasks_to_run;
         wu.num_total_tasks = tg_wu.num_total_tasks;
         wu.runnable = tg_wu.runnable;
 
         // Increment graph subtask_id
-        tg_wu.subtask_id++;
+        tg_wu.subtask_id += tg_wu.num_subtasks_to_run;
 
         // Pop task from ready tasks if we just assigned the last subtask
         if (tg_wu.subtask_id == tg_wu.num_total_tasks) {
@@ -356,7 +375,10 @@ void TaskGraph::shutdown() {
     pthread_mutex_lock(&_tg_lock);
 
     // Add sentinel to work queue, broadcast to all threads
-    _ready_tasks.push_back(SHUTDOWN_TASK);
+    _task_graph[0].work_unit = wu_shutdown;
+    _task_graph[0].n_subtasks_done = 0;
+    _task_graph[0].done = false;
+    _ready_tasks.push_back(0);
     pthread_cond_broadcast(&_task_received);
 
     pthread_mutex_unlock(&_tg_lock);
@@ -390,8 +412,10 @@ void* threadWorkerB(void *args) {
             break;
         } else {
             // Run the task and mark it complete
-            wu.runnable->runTask(wu.subtask_id, wu.num_total_tasks);
-            wu = tg->markComplete(wu.task_id, wu.subtask_id);
+            for (int i = 0; i < wu.num_subtasks_to_run; i++) {
+                wu.runnable->runTask(wu.subtask_id + i, wu.num_total_tasks);
+            }
+            wu = tg->markComplete(wu);
         }
     }
 
@@ -415,8 +439,7 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
     // Setup thread pool
     _num_threads = num_threads;
     _thread_pool = (pthread_t *) malloc(_num_threads * sizeof(pthread_t));
-
-    // _args = (TaskArgsA3 *) malloc(_num_threads * sizeof(TaskArgsA3));
+    _tg.n_workers = num_threads; // To help chunk work
 
     // PThread create
     for (int i = 0; i < _num_threads; i++) {

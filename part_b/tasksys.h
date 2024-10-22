@@ -65,6 +65,7 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
 struct WorkUnit {
     TaskID task_id; // -1 if no work to do
     int subtask_id; // Invariant: Holds next unassigned subtask_id
+    int num_subtasks_to_run; // May want to run >1 subtasks at a time
     int num_total_tasks;
     IRunnable* runnable;
 };
@@ -91,12 +92,15 @@ class TaskGraph {
         TaskGraph();
         ~TaskGraph();
 
+        // Configure number of workers to chunk work for
+        int n_workers; 
+
         // Adding always broadcasts
         TaskID addTask(IRunnable* runnable, int num_total_tasks,
                                 const std::vector<TaskID>& deps);
 
         // Mark current unit of work done, return next unit of work, if any
-        WorkUnit markComplete(TaskID task, int subtask_id); 
+        WorkUnit markComplete(WorkUnit wu); 
 
         // Either returns sync or cond_waits
         WorkUnit getNextWorkUnit(); 
@@ -127,6 +131,7 @@ class TaskGraph {
         pthread_mutex_t _tg_lock; // Must have this to update tg in any way
         pthread_cond_t _task_received; // If there's no work, idle threads subscribe to this and wait for broadcast
         pthread_cond_t _all_tasks_done; // For sync call
+
 };
 
 
