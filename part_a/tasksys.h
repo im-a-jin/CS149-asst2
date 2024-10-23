@@ -34,12 +34,13 @@ struct TaskArgsA2 {
 struct TaskArgsA3 {
     int thread_id;
     int num_threads;
+    bool *is_running;
     bool *done;
     std::queue<RunTask> *work_queue;
     pthread_mutex_t *mutex_lock;
-    pthread_cond_t *queue_add;
-    pthread_cond_t *all_threads_done;
-    pthread_cond_t *reset;
+    pthread_cond_t *wake;
+    pthread_cond_t *threads_done;
+    int *threads_sleeping;
 };
 
 
@@ -96,10 +97,10 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
     private:
         std::queue<RunTask> _work_queue;
         pthread_mutex_t _mutex_lock;
-        bool * _is_running;
+        bool *_is_running;
         bool *_done;
-        TaskArgsA2 * _args;
-        pthread_t * _thread_pool;
+        TaskArgsA2 *_args;
+        pthread_t *_thread_pool;
         int _num_threads;
 
     public:
@@ -122,13 +123,13 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
     private:
         std::queue<RunTask> _work_queue;
         pthread_mutex_t _mutex_lock;
-        pthread_cond_t _queue_add;
-        pthread_cond_t _all_threads_done;
-        pthread_cond_t _reset;
-        TaskArgsA3 * _args;
-        pthread_t * _thread_pool;
-        int _num_threads;
+        pthread_cond_t _wake;
+        pthread_cond_t _threads_done;
         bool *_done;
+        TaskArgsA3 *_args;
+        pthread_t *_thread_pool;
+        int _num_threads;
+        int _threads_sleeping;
 
     public:
         TaskSystemParallelThreadPoolSleeping(int num_threads);
