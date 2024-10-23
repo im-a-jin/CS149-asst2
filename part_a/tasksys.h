@@ -36,11 +36,13 @@ struct TaskArgsA3 {
     int num_threads;
     bool *is_running;
     bool *done;
-    std::queue<RunTask> *work_queue;
+    int *work_queue;
     pthread_mutex_t *mutex_lock;
     pthread_cond_t *wake;
     pthread_cond_t *threads_done;
     int *threads_sleeping;
+    IRunnable **runnable;
+    int *num_total_tasks;
 };
 
 
@@ -121,7 +123,7 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
  */
 class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
     private:
-        std::queue<RunTask> _work_queue;
+        int _work_queue;
         pthread_mutex_t _mutex_lock;
         pthread_cond_t _wake;
         pthread_cond_t _threads_done;
@@ -130,6 +132,8 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         pthread_t *_thread_pool;
         int _num_threads;
         int _threads_sleeping;
+        IRunnable *_runnable;
+        int _num_total_tasks;
 
     public:
         TaskSystemParallelThreadPoolSleeping(int num_threads);
