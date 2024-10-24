@@ -64,7 +64,8 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
 
 struct WorkUnit {
     TaskID task_id; // -1 if no work to do
-    int subtask_id; // Invariant: Holds next unassigned subtask_id
+    int subtask_id_lo; // Invariant: Holds next unassigned subtask_id from 0
+    int subtask_id_hi; // Invariant: Holds next unassigned subtask_id from top
     int num_subtasks_to_run; // May want to run >1 subtasks at a time
     int num_total_tasks;
     IRunnable* runnable;
