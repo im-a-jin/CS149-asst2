@@ -78,6 +78,7 @@ struct TaskGraphNode {
     bool done;
 };
 
+struct WorkerArgsB;
 
 /*
  * TaskGraph: This class handles the task graph which underlies
@@ -97,19 +98,21 @@ class TaskGraph {
 
         // Adding always broadcasts
         TaskID addTask(IRunnable* runnable, int num_total_tasks,
-                                const std::vector<TaskID>& deps);
+                                const std::vector<TaskID>& deps,
+                                int n_workers, WorkerArgsB *worker_args);
 
         // Mark current unit of work done, return next unit of work, if any
-        WorkUnit markComplete(WorkUnit wu); 
+        WorkUnit markCompleteGetNext(WorkUnit wu, pthread_mutex_t *worker_lock, bool *idle_flag);
 
         // Either returns sync or cond_waits
-        WorkUnit getNextWorkUnit(); 
+        WorkUnit getStarterWorkUnit(pthread_mutex_t *worker_lock, pthread_cond_t *worker_inbox,
+            bool *idle_flag, WorkUnit *wu_mailbox);
 
         // Consumers use this to listen for done state (sync)
         void blockUntilEmpty();
 
         // Called by main to get all workers to return
-        void shutdown();
+        void shutdown(WorkerArgsB *worker_args);
 
     private:
         int _task_id_counter;
@@ -134,6 +137,14 @@ class TaskGraph {
 
 };
 
+struct WorkerArgsB {
+    TaskGraph *tg;
+    int thread_id;
+    pthread_mutex_t worker_mutex;
+    pthread_cond_t worker_inbox;
+    bool is_idle; // Invariant: Only change if holding worker_mutex
+    WorkUnit wu_mailbox; // Invariant: Only change if holding worker_mutex
+};
 
 void* threadWorkerB(void *args);
 
@@ -157,14 +168,7 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         TaskGraph _tg;
         pthread_t * _thread_pool;
         int _num_threads;
-
-
-
-
-
-
-
-
+        WorkerArgsB *_worker_args;
 
 
 

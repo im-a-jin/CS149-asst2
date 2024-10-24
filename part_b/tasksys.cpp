@@ -154,7 +154,8 @@ TaskGraph::~TaskGraph() {
     pthread_cond_destroy(&_all_tasks_done);
 }
 
-TaskID TaskGraph::addTask(IRunnable* runnable, int num_total_tasks, const std::vector<TaskID>& deps) {
+TaskID TaskGraph::addTask(IRunnable* runnable, int num_total_tasks, const std::vector<TaskID>& deps,
+                          int n_workers, WorkerArgsB *worker_args) {
     // Adds a new task to the graph, managing graph state and subscribers
 
     // Calculate subtask allocation
@@ -204,8 +205,37 @@ TaskID TaskGraph::addTask(IRunnable* runnable, int num_total_tasks, const std::v
 
     // printf("TaskGraph::addTask: Added task %d: %d subtasks, %d deps\n", cur_tid, num_total_tasks, tgn.n_dependencies);
 
-    // Broadcast that a task was added
-    pthread_cond_broadcast(&_task_received);
+
+    // Hand out work to idle workers, if any
+    int cur_worker = 0;
+    bool has_unassigned_work = true;
+    
+    // Find next available idle worker, assign next unit of work
+    while (cur_worker < n_workers && has_unassigned_work) {
+        // <WORKER-SPECIFIC_CRITICAL_SECTION> Grab current worker mutex
+        pthread_mutex_lock(&worker_args[cur_worker].worker_mutex);
+
+        // Found an idle worker!
+        if (worker_args[cur_worker].is_idle) {
+            // Get a unit of work for this worker
+            WorkUnit wu = getNextWorkUnitInner(); // Also updates _ready_tasks
+            if (wu.task_id == NO_TASK) {
+                // printf("TaskGraph::addTask: No work to assign to worker %d\n", cur_worker);
+                has_unassigned_work = false;
+                pthread_mutex_unlock(&worker_args[cur_worker].worker_mutex); // (Break skips usual unlock)
+                break; // Jump out of inner loop if no work
+            } else {
+                // printf("TaskGraph::addTask: Assigning task %d, subtask %d to worker %d\n", cur_tid, wu.subtask_id, cur_worker);
+                worker_args[cur_worker].wu_mailbox = wu;
+                worker_args[cur_worker].is_idle = false; // Flag immediately so successive adds can't overwrite
+                pthread_cond_signal(&worker_args[cur_worker].worker_inbox); // Signal worker
+            }
+        }
+        pthread_mutex_unlock(&worker_args[cur_worker].worker_mutex);
+        // </WORKER-SPECIFIC_CRITICAL_SECTION> Unlock worker mutex
+
+        cur_worker++;
+    }
 
     pthread_mutex_unlock(&_tg_lock);
     // </CRITICAL_SECTION>
@@ -213,10 +243,12 @@ TaskID TaskGraph::addTask(IRunnable* runnable, int num_total_tasks, const std::v
     return cur_tid;
 }
 
-WorkUnit TaskGraph::markComplete(WorkUnit wu_done) {
+WorkUnit TaskGraph::markCompleteGetNext(WorkUnit wu_done, pthread_mutex_t *worker_lock, bool *idle_flag) {
     // Receives the completion of a subtask, updates graph state,
     // and returns the next unit of work to be done, if any
     // (If no work, task_id will be NO_TASK)
+
+    // If we've run out of work, set the worker's idle flag
 
 
     TaskID task = wu_done.task_id;
@@ -266,48 +298,71 @@ WorkUnit TaskGraph::markComplete(WorkUnit wu_done) {
     // Find new work
     wu = getNextWorkUnitInner();
 
-    pthread_mutex_unlock(&_tg_lock);
-    // </CRITICAL_SECTION>
-
-    return wu;
-}
-
-WorkUnit TaskGraph::getNextWorkUnit() {
-    // Returns the next unit of work to be done, if any
-    // (If no work, task_id will be NO_TASK)
-    WorkUnit wu;
-
-    // <CRITICAL_SECTION>
-    pthread_mutex_lock(&_tg_lock);
-
-    while (true) { // Loop to handle spurious wakeups
-        // Run once first for the sync case
-        wu = getNextWorkUnitInner();
-        if (wu.task_id != NO_TASK) {
-            // Found work, return it
-            break;
-        } else {
-            // Subscribe to _task_received broadcast, wait for work
-            pthread_cond_wait(&_task_received, &_tg_lock);
-        }
+    // Flag idle worker if we're out of work
+    if (wu.task_id == NO_TASK) {
+        pthread_mutex_lock(worker_lock);
+        *idle_flag = true;
+        pthread_mutex_unlock(worker_lock);
     }
 
     pthread_mutex_unlock(&_tg_lock);
     // </CRITICAL_SECTION>
 
-    assert(wu.task_id != NO_TASK);
     return wu;
 }
+
+
+WorkUnit TaskGraph::getStarterWorkUnit(
+    pthread_mutex_t *worker_lock, pthread_cond_t *worker_inbox,
+    bool *idle_flag, WorkUnit *wu_mailbox) {
+    // Called by workers who have absolutely no work:
+    // Either they just started, or their current thread of work ran out
+    // (implying _ready_tasks is empty)
+
+    // This uses workers' individual personal locks to avoid everyone 
+    // contending for main lock when new work arrives.
+
+    // Since it doesn't edit the task graph, it doesn't need the main lock.
+    WorkUnit wu;
+
+    // <WORKER-SPECIFIC_CRITICAL_SECTION>
+    pthread_mutex_lock(worker_lock);
+
+    while (true) { // Loop to handle spurious wakeups
+        // Is there something already allocated for me?
+        if (wu_mailbox->task_id != NO_TASK) {
+            // printf("TaskGraph::getStarterWorkUnit: Worker %d found work in mailbox\n", pthread_self());
+            // Yes: Take it and empty mailbox
+            wu = *wu_mailbox;
+            *wu_mailbox = WorkUnit{NO_TASK, 0, 0, 0, NULL};
+            break;
+        } else {
+            // printf("TaskGraph::getStarterWorkUnit: Worker %d found no work in mailbox\n", pthread_self());
+            // Nothing allocated for me, wait for more work
+            // Subscribe to _task_received signal, wait for work
+            pthread_cond_wait(worker_inbox, worker_lock);
+            // printf("TaskGraph::getStarterWorkUnit: Worker %d woke up\n", pthread_self());
+        }
+    }
+
+    assert(wu.task_id != NO_TASK);
+
+    pthread_mutex_unlock(worker_lock);
+    // </WORKER-SPECIFIC_CRITICAL_SECTION>
+
+    return wu;
+}
+
 
 WorkUnit TaskGraph::getNextWorkUnitInner() {
     // Helper function to get the next unit of work to be done, if any
     // Returns wu with task_id of -1 if no work to do.
-    // Assumes lock is in place.
-
+    // Never blocks.
+    // Assumes shared lock is in place.
     WorkUnit wu;
 
     if (_ready_tasks.size() == _rt_n_done) { // e.g. got 3, done 3
-        // No work to do: Return sentinel
+        // No work on queue: Return sentinel
         wu.task_id = NO_TASK;
     } else {
         // Get next task ID
@@ -356,7 +411,7 @@ void TaskGraph::blockUntilEmpty() {
     // </CRITICAL_SECTION>
 }
 
-void TaskGraph::shutdown() {
+void TaskGraph::shutdown(WorkerArgsB *worker_args) {
     // Called by main to put graph into shutdown state
     // Ensures queue is empty, then adds sentinel to work queue
     // and broadcasts to all threads
@@ -371,18 +426,24 @@ void TaskGraph::shutdown() {
     wu_shutdown.subtask_id = 0;
     wu_shutdown.num_total_tasks = INT_MAX;
 
+    // Put sentinel task on work queue for non-idle workers
     // <CRITICAL_SECTION>
     pthread_mutex_lock(&_tg_lock);
-
-    // Add sentinel to work queue, broadcast to all threads
     _task_graph[0].work_unit = wu_shutdown;
     _task_graph[0].n_subtasks_done = 0;
     _task_graph[0].done = false;
     _ready_tasks.push_back(0);
-    pthread_cond_broadcast(&_task_received);
-
     pthread_mutex_unlock(&_tg_lock);
     // </CRITICAL_SECTION>
+
+    // Put sentinel task in mailbox for idle workers
+    for (int i = 0; i < n_workers; i++) {
+        pthread_mutex_lock(&worker_args[i].worker_mutex);
+        worker_args[i].wu_mailbox = wu_shutdown;
+        worker_args[i].is_idle = false; // Flag immediately so successive adds can't overwrite
+        pthread_cond_signal(&worker_args[i].worker_inbox); // Signal worker
+        pthread_mutex_unlock(&worker_args[i].worker_mutex);
+    }
 }
 
 
@@ -398,14 +459,21 @@ void TaskGraph::shutdown() {
  */
 
 void* threadWorkerB(void *args) {
-    TaskGraph *tg = (TaskGraph *) args;
+    // Unpack arguments
+    WorkerArgsB *wa = (WorkerArgsB *) args;
+    TaskGraph *tg = wa->tg;
+    int thread_id = wa->thread_id;
+    bool *idle_flag = &(wa->is_idle);
+    WorkUnit *wu_mailbox = &(wa->wu_mailbox);
+    pthread_mutex_t *my_mutex = &wa->worker_mutex;
+    pthread_cond_t *my_inbox = &wa->worker_inbox;
+
     WorkUnit wu;
     wu.task_id = NO_TASK;
 
     while (true) {
         if (wu.task_id == NO_TASK) {
-            // Get the next work unit
-            wu = tg->getNextWorkUnit();
+            wu = tg->getStarterWorkUnit(my_mutex, my_inbox, idle_flag, wu_mailbox);
         } else if (wu.task_id == SHUTDOWN_TASK) {
             // Received done sentinel, exit
             // printf("threadWorkerB: Received done sentinel, exiting\n");
@@ -414,15 +482,14 @@ void* threadWorkerB(void *args) {
             // Run the task and mark it complete
             for (int i = 0; i < wu.num_subtasks_to_run; i++) {
                 wu.runnable->runTask(wu.subtask_id + i, wu.num_total_tasks);
+                // printf("threadWorkerB: thread %d, runTask: Task %d, subtask %d done\n", thread_id, wu.task_id, wu.subtask_id+i);
             }
-            wu = tg->markComplete(wu);
+            wu = tg->markCompleteGetNext(wu, my_mutex, idle_flag);
         }
     }
 
     return NULL;
 }
-
-
 
 const char* TaskSystemParallelThreadPoolSleeping::name() {
     return "Parallel + Thread Pool + Sleep";
@@ -441,9 +508,18 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
     _thread_pool = (pthread_t *) malloc(_num_threads * sizeof(pthread_t));
     _tg.n_workers = num_threads; // To help chunk work
 
+    // Worker arguments 
+    _worker_args = (WorkerArgsB *) malloc(_num_threads * sizeof(WorkerArgsB));
+
     // PThread create
     for (int i = 0; i < _num_threads; i++) {
-        pthread_create(&_thread_pool[i], NULL, threadWorkerB, (void *) &_tg);
+        _worker_args[i].tg = &_tg;
+        _worker_args[i].thread_id = i;
+        _worker_args[i].is_idle = true;
+        _worker_args[i].wu_mailbox = WorkUnit{NO_TASK, 0, 0, 0, NULL};
+        pthread_mutex_init(&_worker_args[i].worker_mutex, NULL);
+        pthread_cond_init(&_worker_args[i].worker_inbox, NULL);
+        pthread_create(&_thread_pool[i], NULL, threadWorkerB, (void *) &_worker_args[i]);
     }
 }
 
@@ -456,14 +532,17 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     //
 
     // Send shutdown signal
-    _tg.shutdown();
+    _tg.shutdown(_worker_args);
 
     // Join threads
     for (int i = 0; i < _num_threads; i++) {
         pthread_join(_thread_pool[i], NULL);
+        pthread_cond_destroy(&_worker_args[i].worker_inbox);
+        pthread_mutex_destroy(&_worker_args[i].worker_mutex);
     }
 
     // Free memory
+    free(_worker_args);
     free(_thread_pool);
 
     // printf("TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping: Freeing thread pool\n");
@@ -478,7 +557,7 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
     // tasks sequentially on the calling thread.
     //
 
-    _tg.addTask(runnable, num_total_tasks, std::vector<TaskID>());
+    _tg.addTask(runnable, num_total_tasks, std::vector<TaskID>(), _num_threads, _worker_args);
     _tg.blockUntilEmpty();
 }
 
@@ -491,7 +570,7 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
     //
 
     // Add task to graph
-    _tg.addTask(runnable, num_total_tasks, deps);
+    _tg.addTask(runnable, num_total_tasks, deps, _num_threads, _worker_args);
 
     return 0;
 }
