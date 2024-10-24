@@ -287,6 +287,7 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
     _runnable = NULL;
     _num_total_tasks = 0;
     _work_queue = 0;
+    _threads_sleeping = 0;
 
     _done = (bool *) malloc(sizeof(bool));
     *_done = false;
