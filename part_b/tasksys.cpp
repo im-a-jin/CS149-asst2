@@ -135,7 +135,7 @@ TaskGraph::TaskGraph() {
 
     // Mutex and condition variables
     pthread_mutex_init(&_tg_lock, NULL);
-    pthread_cond_init(&_task_received, NULL);
+    // pthread_cond_init(&_task_received, NULL);
     pthread_cond_init(&_all_tasks_done, NULL);
 
     // Init data structures
@@ -150,7 +150,7 @@ TaskGraph::~TaskGraph() {
 
     // Destroy mutex and condition variables
     pthread_mutex_destroy(&_tg_lock);
-    pthread_cond_destroy(&_task_received);
+    // pthread_cond_destroy(&_task_received);
     pthread_cond_destroy(&_all_tasks_done);
 }
 
@@ -168,9 +168,17 @@ TaskID TaskGraph::addTask(IRunnable* runnable, int num_total_tasks, const std::v
     }
     // printf("TaskGraph::addTask: %d subtasks per worker\n", n_subtasks_per_worker);
 
+    // Prep subtask IDs
+    std::vector<SubTaskID> subtask_ids(num_total_tasks, 0);
+    for (int i = 0; i < num_total_tasks; i++) {
+        subtask_ids[i] = i;
+    }
+    // Shuffle subtask IDs
+    std::random_shuffle(subtask_ids.begin(), subtask_ids.end());
+
     // Prep new task node
     TaskGraphNode tgn;
-    tgn.work_unit = WorkUnit{0, 0, n_subtasks_per_worker, num_total_tasks, runnable};
+    tgn.work_unit = WorkUnit{0, subtask_ids, 0, n_subtasks_per_worker, num_total_tasks, runnable};
     tgn.n_dependencies = deps.size();
     tgn.dependents = std::vector<TaskID>();
     tgn.n_subtasks_done = 0;
@@ -252,8 +260,8 @@ WorkUnit TaskGraph::markCompleteGetNext(WorkUnit wu_done, pthread_mutex_t *worke
 
 
     TaskID task = wu_done.task_id;
-    int subtask_id = wu_done.subtask_id;
-    int num_subtasks_to_run = wu_done.num_subtasks_to_run;
+    // int subtask_id = wu_done.subtask_id;
+    // int num_subtasks_to_run = wu_done.num_subtasks_to_run;
     // printf("TaskGraph::markComplete: Task %d, subtask %d-%d is done\n", task, subtask_id, subtask_id + num_subtasks_to_run - 1);
 
 
@@ -334,7 +342,7 @@ WorkUnit TaskGraph::getStarterWorkUnit(
             // printf("TaskGraph::getStarterWorkUnit: Worker %d found work in mailbox\n", pthread_self());
             // Yes: Take it and empty mailbox
             wu = *wu_mailbox;
-            *wu_mailbox = WorkUnit{NO_TASK, 0, 0, 0, NULL};
+            *wu_mailbox = WorkUnit{NO_TASK, std::vector<SubTaskID>(), 0, 0, 0, NULL};
             break;
         } else {
             // printf("TaskGraph::getStarterWorkUnit: Worker %d found no work in mailbox\n", pthread_self());
@@ -370,19 +378,20 @@ WorkUnit TaskGraph::getNextWorkUnitInner() {
         WorkUnit& tg_wu = _task_graph[task_id].work_unit;
 
         // Setup work unit
-        int n_subtasks_left = tg_wu.num_total_tasks - tg_wu.subtask_id; // e.g. 4 tasks, ID 1 = 3 left
+        int n_subtasks_left = tg_wu.num_total_tasks - tg_wu.subtask_idx; // e.g. 4 tasks, idx 1 = 3 left
 
         wu.task_id = tg_wu.task_id; // Must get this from tg_wu for special shutdown case
-        wu.subtask_id = tg_wu.subtask_id;
+        wu.subtask_ids = tg_wu.subtask_ids;
+        wu.subtask_idx = tg_wu.subtask_idx;
         wu.num_subtasks_to_run = (n_subtasks_left < tg_wu.num_subtasks_to_run) ? n_subtasks_left : tg_wu.num_subtasks_to_run;
         wu.num_total_tasks = tg_wu.num_total_tasks;
         wu.runnable = tg_wu.runnable;
 
         // Increment graph subtask_id
-        tg_wu.subtask_id += tg_wu.num_subtasks_to_run;
+        tg_wu.subtask_idx += tg_wu.num_subtasks_to_run;
 
         // Pop task from ready tasks if we just assigned the last subtask
-        if (tg_wu.subtask_id == tg_wu.num_total_tasks) {
+        if (tg_wu.subtask_idx == tg_wu.num_total_tasks) {
             _ready_tasks[_rt_n_done] = NO_TASK;
             _rt_n_done++;
         }
@@ -423,7 +432,7 @@ void TaskGraph::shutdown(WorkerArgsB *worker_args) {
     // Thread workers exit when they receive this task ID
     WorkUnit wu_shutdown;
     wu_shutdown.task_id = SHUTDOWN_TASK;
-    wu_shutdown.subtask_id = 0;
+    wu_shutdown.subtask_idx = 0;
     wu_shutdown.num_total_tasks = INT_MAX;
 
     // Put sentinel task on work queue for non-idle workers
@@ -481,7 +490,8 @@ void* threadWorkerB(void *args) {
         } else {
             // Run the task and mark it complete
             for (int i = 0; i < wu.num_subtasks_to_run; i++) {
-                wu.runnable->runTask(wu.subtask_id + i, wu.num_total_tasks);
+                SubTaskID subtask_id = wu.subtask_ids[wu.subtask_idx + i];
+                wu.runnable->runTask(subtask_id, wu.num_total_tasks);
                 // printf("threadWorkerB: thread %d, runTask: Task %d, subtask %d done\n", thread_id, wu.task_id, wu.subtask_id+i);
             }
             wu = tg->markCompleteGetNext(wu, my_mutex, idle_flag);
@@ -509,14 +519,15 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
     _tg.n_workers = num_threads; // To help chunk work
 
     // Worker arguments 
-    _worker_args = (WorkerArgsB *) malloc(_num_threads * sizeof(WorkerArgsB));
+    // _worker_args = (WorkerArgsB *) malloc(_num_threads * sizeof(WorkerArgsB));
+    _worker_args = new WorkerArgsB[_num_threads];
 
     // PThread create
     for (int i = 0; i < _num_threads; i++) {
         _worker_args[i].tg = &_tg;
         _worker_args[i].thread_id = i;
         _worker_args[i].is_idle = true;
-        _worker_args[i].wu_mailbox = WorkUnit{NO_TASK, 0, 0, 0, NULL};
+        _worker_args[i].wu_mailbox.task_id = NO_TASK;
         pthread_mutex_init(&_worker_args[i].worker_mutex, NULL);
         pthread_cond_init(&_worker_args[i].worker_inbox, NULL);
         pthread_create(&_thread_pool[i], NULL, threadWorkerB, (void *) &_worker_args[i]);
@@ -542,7 +553,7 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     }
 
     // Free memory
-    free(_worker_args);
+    delete[] _worker_args;
     free(_thread_pool);
 
     // printf("TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping: Freeing thread pool\n");
