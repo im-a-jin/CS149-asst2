@@ -48,15 +48,16 @@ void * runTaskWrapperA2(void * args) {
 void * runTaskWrapperA3(void * args) {
     TaskArgsA3 *taskArgs = (TaskArgsA3 *) args;
     int cur_task;
-    bool runnable;
+    int tasks_per_thread;
 
     while (!*(taskArgs->done)) {
-        runnable = false;
+        tasks_per_thread = 0;
 
         pthread_mutex_lock(taskArgs->mutex_lock);
         if (*(taskArgs->work_queue) < *(taskArgs->num_total_tasks)) {
-            cur_task = (*(taskArgs->work_queue))++;
-            runnable = true;
+            cur_task = *(taskArgs->work_queue);
+            *(taskArgs->work_queue) += TASKS_PER_THREAD;
+            tasks_per_thread = std::max(1, std::min(TASKS_PER_THREAD, *(taskArgs->num_total_tasks)-cur_task));
         } else {
             if (++(*(taskArgs->threads_sleeping)) == taskArgs->num_threads) {
                 pthread_cond_signal(taskArgs->threads_done);
@@ -65,8 +66,10 @@ void * runTaskWrapperA3(void * args) {
         }
         pthread_mutex_unlock(taskArgs->mutex_lock);
 
-        if (runnable) {
-            (*(taskArgs->runnable))->runTask(cur_task, *(taskArgs->num_total_tasks));
+        if (tasks_per_thread > 0) {
+            for (int i = 0; i < tasks_per_thread; i++) {
+                (*(taskArgs->runnable))->runTask(cur_task + i, *(taskArgs->num_total_tasks));
+            }
         }
     }
 

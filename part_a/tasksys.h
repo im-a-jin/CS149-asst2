@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <atomic>
 
-#define TASKS_PER_THREAD 1
+#define TASKS_PER_THREAD 4
 
 struct RunTask {
     IRunnable* runnable;
