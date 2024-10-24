@@ -188,15 +188,19 @@ TaskID TaskGraph::addTask(IRunnable* runnable, int num_total_tasks, const std::v
     _task_graph.push_back(tgn);
 
     // Process task's dependencies
+    // printf("TaskGraph::addTask: Task %d has %d dependencies:\n    ", cur_tid, tgn.n_dependencies);
     for (TaskID dep : deps) {
         // Add dependent to dependency
         _task_graph[dep].dependents.push_back(cur_tid);
+        // printf("%d, ", dep);
 
         // If dependency is done, decrement dependency count
         if (_task_graph[dep].done) {
             tgn.n_dependencies--;
         }
     }
+    // printf("\n");
+
 
     // If task has no dependencies, add to ready tasks
     if (tgn.n_dependencies == 0) {
@@ -585,9 +589,7 @@ TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnabl
     //
 
     // Add task to graph
-    _tg.addTask(runnable, num_total_tasks, deps, _num_threads, _worker_args);
-
-    return 0;
+    return _tg.addTask(runnable, num_total_tasks, deps, _num_threads, _worker_args);
 }
 
 void TaskSystemParallelThreadPoolSleeping::sync() {
