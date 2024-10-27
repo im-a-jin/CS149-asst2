@@ -37,6 +37,7 @@ struct TaskArgsA3 {
     bool *done;                     // true if destructor called, false otherwise
     int *work_queue;                // task_id counter
     pthread_mutex_t *mutex_lock;    // shared mutex lock
+//  pthread_mutex_t *thread_lock;   // thread wait locks
     pthread_cond_t *wake;           // thread sleep/done condition variable
     pthread_cond_t *all_done;       // thread completed 
     std::atomic<int> *tasks_done;   // counter for tasks done
@@ -124,6 +125,7 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
     private:
         int _work_queue;
         pthread_mutex_t _mutex_lock;
+//      pthread_mutex_t *_thread_locks;
         pthread_cond_t _wake;
         pthread_cond_t _all_done;
         bool *_done;
