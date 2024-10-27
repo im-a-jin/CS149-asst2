@@ -47,71 +47,7 @@ typedef struct {
     double time;
 } TestResults;
 
-/*
- * ==================================================================
- *  Skeleton task definition and test definition. Use this to create
- *  your own test, but feel free to modify or delete existing parts of
- *  the skeleton as needed. Look at some of the below task definitions
- *  and the corresponding test definitions for inspiration.
- *  `class SimpleMultiplyTask` and `simpleTest` are a good simple
- *  example.
- * ==================================================================
-*/
-/*
- * Implement your task here
-*/
-class YourTask : public IRunnable {
-    public:
-        YourTask() {}
-        ~YourTask() {}
-        void runTask(int task_id, int num_total_tasks) {}
-};
-/*
- * Implement your test here. Call this function from a wrapper that passes in
- * do_async and num_elements. See `simpleTest`, `simpleTestSync`, and
- * `simpleTestAsync` as an example.
- */
-TestResults yourTest(ITaskSystem* t, bool do_async, int num_elements, int num_bulk_task_launches) {
-    // TODO: initialize your input and output buffers
-    int* output = new int[num_elements];
 
-    // TODO: instantiate your bulk task launches
-
-    // Run the test
-    double start_time = CycleTimer::currentSeconds();
-    if (do_async) {
-        // TODO:
-        // initialize dependency vector
-        // make calls to t->runAsyncWithDeps and push TaskID to dependency vector
-        // t->sync() at end
-    } else {
-        // TODO: make calls to t->run
-    }
-    double end_time = CycleTimer::currentSeconds();
-
-    // Correctness validation
-    TestResults results;
-    results.passed = true;
-
-    for (int i=0; i<num_elements; i++) {
-        int value = 0; // TODO: initialize value
-        for (int j=0; j<num_bulk_task_launches; j++) {
-            // TODO: update value as expected
-        }
-
-        int expected = value;
-        if (output[i] != expected) {
-            results.passed = false;
-            printf("%d: %d expected=%d\n", i, output[i], expected);
-            break;
-        }
-    }
-    results.time = end_time - start_time;
-
-    delete [] output;
-
-    return results;
-}
 
 /*
  * ==================================================================
@@ -1402,4 +1338,185 @@ TestResults strictGraphDepsMedium(ITaskSystem* t) {
 
 TestResults strictGraphDepsLarge(ITaskSystem* t) {
     return strictGraphDepsTestBase(t,1000,20000,0);
+}
+
+
+/*
+ * ==================================================================
+ *  Skeleton task definition and test definition. Use this to create
+ *  your own test, but feel free to modify or delete existing parts of
+ *  the skeleton as needed. Look at some of the below task definitions
+ *  and the corresponding test definitions for inspiration.
+ *  `class SimpleMultiplyTask` and `simpleTest` are a good simple
+ *  example.
+ * ==================================================================
+*/
+/*
+ * Implement your task here
+*/
+
+
+/*
+ * Read from an input array, and for each item, write the value
+ * to the power of N to the output array (currently N=3).
+ */
+class A2MultiplyTask : public IRunnable {
+    public:
+        int num_elements_;
+        int* array_in;
+        int* array_out;
+
+        A2MultiplyTask(int num_elements, int* array_in, int* array_out)
+            : num_elements_(num_elements), array_in(array_in), array_out(array_out) {}
+        ~A2MultiplyTask() {}
+
+        static inline int multiply_task(int iters, int input) {
+            int accumulator = 1;
+            for (int i = 0; i < iters; ++i) {
+                accumulator *= input;
+            }
+            return accumulator;
+        }
+
+        void runTask(int task_id, int num_total_tasks) {
+            // handle case where num_elements is not evenly divisible by num_total_tasks
+            int elements_per_task = (num_elements_ + num_total_tasks-1) / num_total_tasks;
+            int start_el = elements_per_task * task_id;
+            int end_el = std::min(start_el + elements_per_task, num_elements_);
+
+            for (int i=start_el; i<end_el; i++)
+                array_out[i] = multiply_task(3, array_in[i]);
+        }
+};
+
+
+
+/*
+ * Implement your test here. Call this function from a wrapper that passes in
+ * do_async and num_elements. See `simpleTest`, `simpleTestSync`, and
+ * `simpleTestAsync` as an example.
+ */
+TestResults yourTest(ITaskSystem* t, bool do_async, bool do_deps, int num_elements, int num_bulk_task_launches) {
+    // num_elements: The total number of elements to process
+    // num_bulk_task_launches: The number of bulk task launches to perform in order to process num_elements
+
+    // Customizable test harness
+
+    // We use this to test the effect of two things:
+    // 1. How the number of tasks affects perf across async vs sync
+    // - If lock contention is on the critical path, we expect async perf to decline
+    //   as the number of tasks increases, due to waiting on locks.
+    // 2. How having dependencies vs no dependencies affects perf
+    // - For the same set of tasks, we compare performance with and without dependencies.
+    // - We would like to measure the overhead imposed by dependencies.
+
+    // The underlying task: Multiply a bunch of numbers by 3
+    bool apply_dependencies = true;
+
+    assert(num_elements % num_bulk_task_launches == 0);
+    int num_elements_per_task = num_elements / num_bulk_task_launches;
+
+    // Initialize input and output buffers
+    int* array_in = new int[num_elements];
+    for (int i=0; i<num_elements; i++) {
+        array_in[i] = i + 1;
+    }
+    int* array_out = new int[num_elements];
+
+    // Instantiate bulk task launches
+    std::vector<A2MultiplyTask> tasks;
+    for (int i=0; i<num_bulk_task_launches; i++) {
+        int idx = i * num_elements_per_task;
+        tasks.push_back(A2MultiplyTask(
+            num_elements_per_task,
+            array_in + idx,
+            array_out + idx
+        ));
+    }
+
+    // Run the test
+    double start_time = CycleTimer::currentSeconds();
+    if (do_async) {
+        TaskID prev_task_id;
+        std::vector<TaskID> curDeps;
+        for (int i=0; i<num_bulk_task_launches; i++) {
+            prev_task_id = t->runAsyncWithDeps(&tasks[i], num_elements_per_task, curDeps);
+
+            // Setup dependencies for the next iteration
+            if (apply_dependencies) {
+                if (i == 0) {
+                    curDeps.push_back(prev_task_id);
+                } else {
+                    // Pop previous task id
+                    curDeps.pop_back();
+                    curDeps.push_back(prev_task_id);
+                }
+            }
+        }
+        // Sync after all tasks have been launched
+        t->sync();
+    } else {
+        for (int i=0; i<num_bulk_task_launches; i++) {
+            t->run(&tasks[i], num_elements_per_task);
+        }
+    }
+
+    double end_time = CycleTimer::currentSeconds();
+
+    // Correctness validation
+    TestResults results;
+    results.passed = true;
+
+    for (int i=0; i<num_elements; i++) {
+        int value = i+1;
+        int expected = A2MultiplyTask::multiply_task(3, value);
+
+        if (array_out[i] != expected) {
+            results.passed = false;
+            printf("%d: %d expected=%d\n", i, array_out[i], expected);
+            break;
+        }
+    }
+    results.time = end_time - start_time;
+
+    delete [] array_in;
+    delete [] array_out;
+
+    return results;
+
+
+}
+
+
+// CUSTOM TESTS
+#define NUM_ELEMENTS 8192
+#define NUM_BULK_TASK_LAUNCHES_BASE 32
+#define NUM_BULK_TASK_LAUNCHES_MANY 1024
+
+// Baseline test
+// Sets performance expectations for the rest of our custom tests
+// - Meaning: Each task has 1024 elements
+// - And so if you have 16 threads, each task will be run in batches of 64 subtasks
+TestResults partBTestBase(ITaskSystem* t) {
+    return yourTest(t, false, false, NUM_ELEMENTS, NUM_BULK_TASK_LAUNCHES_BASE);
+}
+TestResults partBTestBaseAsync(ITaskSystem* t) {
+    return yourTest(t, true, false, NUM_ELEMENTS, NUM_BULK_TASK_LAUNCHES_BASE);
+}
+TestResults partBTestBaseAsyncDeps(ITaskSystem* t) {
+    return yourTest(t, true, true, NUM_ELEMENTS, NUM_BULK_TASK_LAUNCHES_BASE);
+}
+
+// Many Small Tasks test:
+// What if the same number of elements are processed, but in many more tasks?
+// - Meaning: Each task has 1024 elements
+// - And so if you have 16 threads, each task will be run in batches of 64 subtasks
+TestResults partBTestManySmallTasks(ITaskSystem* t) {
+    return yourTest(t, false, false, NUM_ELEMENTS, NUM_BULK_TASK_LAUNCHES_MANY);
+}
+TestResults partBTestManySmallTasksAsync(ITaskSystem* t) {
+    return yourTest(t, true, false, NUM_ELEMENTS, NUM_BULK_TASK_LAUNCHES_MANY);
+}
+TestResults partBTestManySmallTasksAsyncDeps(ITaskSystem* t) {
+    return yourTest(t, true, true, NUM_ELEMENTS, NUM_BULK_TASK_LAUNCHES_MANY);
 }

@@ -229,7 +229,7 @@ TaskID TaskGraph::addTask(IRunnable* runnable, int num_total_tasks, const std::v
                 pthread_mutex_unlock(&worker_args[cur_worker].worker_mutex); // (Break skips usual unlock)
                 break; // Jump out of inner loop if no work
             } else {
-                // printf("TaskGraph::addTask: Assigning task %d, subtask %d to worker %d\n", cur_tid, wu.subtask_id, cur_worker);
+                // printf("TaskGraph::addTask: Assigning task %d, %d subtask ID(s) (lo-%d, hi-%d) to worker %d\n", cur_tid, wu.num_subtasks_to_run, wu.subtask_id_lo, wu.subtask_id_hi, cur_worker);
                 worker_args[cur_worker].wu_mailbox = wu;
                 worker_args[cur_worker].is_idle = false; // Flag immediately so successive adds can't overwrite
                 pthread_cond_signal(&worker_args[cur_worker].worker_inbox); // Signal worker
@@ -258,7 +258,7 @@ WorkUnit TaskGraph::markCompleteGetNext(WorkUnit wu_done, pthread_mutex_t *worke
     TaskID task = wu_done.task_id;
     // int subtask_id = wu_done.subtask_id;
     // int num_subtasks_to_run = wu_done.num_subtasks_to_run;
-    // printf("TaskGraph::markComplete: Task %d, subtask %d-%d is done\n", task, subtask_id, subtask_id + num_subtasks_to_run - 1);
+    // printf("TaskGraph::markComplete: Task %d, %d subtask ID(s) from (lo-%d, hi-%d) done\n", task, wu_done.num_subtasks_to_run, wu_done.subtask_id_lo, wu_done.subtask_id_hi);
 
 
     // <CRITICAL_SECTION>
@@ -385,6 +385,9 @@ WorkUnit TaskGraph::getNextWorkUnitInner() {
 
         // Increment graph subtask_id
         int add_lo = tg_wu.num_subtasks_to_run / 2;
+        if (add_lo == 0) {
+            add_lo = 1;
+        }
         // For odd subtask counts, alternate between adding to lo and hi
         if (tg_wu.num_subtasks_to_run % 2 == 1) {
             if (tg_wu.subtask_id_lo % 2 == 0 && tg_wu.subtask_id_hi % 2 == 0) {
@@ -497,11 +500,13 @@ void* threadWorkerB(void *args) {
             for (int i = 0; i < wu.num_subtasks_to_run; i++) {
                 if (i % 2 == 0) {
                     wu.runnable->runTask(wu.subtask_id_lo + i/2, wu.num_total_tasks);
+                    // printf("threadWorkerB: thread %d, runTask: Task %d: Ran subtask ID %d\n", thread_id, wu.task_id, wu.subtask_id_lo + i/2);
                 } else {
                     wu.runnable->runTask(wu.subtask_id_hi - i/2, wu.num_total_tasks);
+                    // printf("threadWorkerB: thread %d, runTask: Task %d: Ran subtask ID %d\n", thread_id, wu.task_id, wu.subtask_id_hi - i/2);
                 }
                 
-                // printf("threadWorkerB: thread %d, runTask: Task %d, subtask %d done\n", thread_id, wu.task_id, wu.subtask_id+i);
+                // printf("threadWorkerB: thread %d, runTask: Task %d, %d subtask ID(s) from (lo-%d, hi-%d) done\n", thread_id, wu.task_id, wu.num_subtasks_to_run, wu.subtask_id_lo, wu.subtask_id_hi);
             }
             wu = tg->markCompleteGetNext(wu, my_mutex, idle_flag);
         }
