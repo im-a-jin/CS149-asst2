@@ -57,16 +57,15 @@ void * runTaskWrapperA3(void * args) {
         if (*(taskArgs->work_queue) < *(taskArgs->num_total_tasks)) {
             cur_task = (*(taskArgs->work_queue))++;
             runnable = true;
-        } else {
-            if (++(*(taskArgs->threads_sleeping)) == taskArgs->num_threads) {
-                pthread_cond_signal(taskArgs->threads_done);
-            }
+        } else if (!*(taskArgs->done)) {
+            pthread_cond_signal(taskArgs->all_done);
             pthread_cond_wait(taskArgs->wake, taskArgs->mutex_lock);
         }
         pthread_mutex_unlock(taskArgs->mutex_lock);
 
         if (runnable) {
             (*(taskArgs->runnable))->runTask(cur_task, *(taskArgs->num_total_tasks));
+            taskArgs->tasks_done->fetch_add(1, std::memory_order_relaxed);
         }
     }
 
@@ -287,7 +286,7 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
     _runnable = NULL;
     _num_total_tasks = 0;
     _work_queue = 0;
-    _threads_sleeping = 0;
+    _tasks_done = 0;
 
     _done = (bool *) malloc(sizeof(bool));
     *_done = false;
@@ -296,7 +295,7 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
 
     pthread_mutex_init(&_mutex_lock, NULL);
     pthread_cond_init(&_wake, NULL);
-    pthread_cond_init(&_threads_done, NULL);
+    pthread_cond_init(&_all_done, NULL);
 
     _args = (TaskArgsA3 *) malloc(_num_threads * sizeof(TaskArgsA3));
 
@@ -308,8 +307,8 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
         _args[i].work_queue = &_work_queue;
         _args[i].mutex_lock = &_mutex_lock;
         _args[i].wake = &_wake;
-        _args[i].threads_done = &_threads_done;
-        _args[i].threads_sleeping = &_threads_sleeping;
+        _args[i].all_done = &_all_done;
+        _args[i].tasks_done = &_tasks_done;
         _args[i].runnable = &_runnable;
         _args[i].num_total_tasks = &_num_total_tasks;
         pthread_create(&_thread_pool[i], NULL, runTaskWrapperA3, &_args[i]);
@@ -323,8 +322,10 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     // Implementations are free to add new class member variables
     // (requiring changes to tasksys.h).
     //
+    pthread_mutex_lock(&_mutex_lock);
     *_done = true;
     pthread_cond_broadcast(&_wake);
+    pthread_mutex_unlock(&_mutex_lock);
 
     // Join threads
     for (int i = 0; i < _num_threads; i++) {
@@ -333,7 +334,7 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
 
     pthread_mutex_destroy(&_mutex_lock);
     pthread_cond_destroy(&_wake);
-    pthread_cond_destroy(&_threads_done);
+    pthread_cond_destroy(&_all_done);
 
     // Free memory
     free(_done);
@@ -347,15 +348,15 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
     // method in Parts A and B.  The implementation provided below runs all
     // tasks sequentially on the calling thread.
     //
-    _threads_sleeping = 0;
+    _tasks_done = 0;
+
+    pthread_mutex_lock(&_mutex_lock);
     _work_queue = 0;
     _runnable = runnable;
     _num_total_tasks = num_total_tasks;
-
-    pthread_mutex_lock(&_mutex_lock);
     pthread_cond_broadcast(&_wake);
-    if (_threads_sleeping < _num_threads) {
-        pthread_cond_wait(&_threads_done, &_mutex_lock);
+    while (_tasks_done < _num_total_tasks) {
+        pthread_cond_wait(&_all_done, &_mutex_lock);
     }
     _runnable = NULL;
     _num_total_tasks = 0;
