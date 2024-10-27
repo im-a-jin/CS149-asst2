@@ -4,14 +4,51 @@
 
 \begin{document}
 
+\lstset{language=C++,basicstyle=\footnotesize\ttfamily,breaklines=true}
+
 \fancyhf{}
-\fancyhead[R]{Matthew Jin (mjin2002)}
+\fancyhead[R]{Derek Chong (derekch), Matthew Jin (mjin2002)}
 \setlength{\headheight}{14pt}
 \pagestyle{fancy}
 
 \centerline{\Large CS 149: Programming Assignment 2}
 \centerline{Autumn 2024-25}
 
-\section{Move to a Parallel Task System}
+\section{Task System Implementation}
+
+Our task system implementation uses a thread pool to store the active threads.
+Each thread is pointed to a \ttt{runTaskWrapper} function that takes in the
+thread arguments listed below:
+\lstinputlisting[linerange={34-39,41-46}]{part_a/tasksys.h}
+
+For part A, we assign tasks to the workers dynamically using a \ttt{work\_queue}
+counter to keep track of the next available \ttt{task\_id}. Each task grabs the
+next \ttt{task\_id} under the \ttt{mutex\_lock} and increments the counter
+before releasing the lock and running the task. Once a thread is finished
+running a task, it will increment the atomic \ttt{tasks\_done} counter by one.
+We use \ttt{std::memory\_order\_relaxed} for its speed since the loads and
+stores across different threads can be arbitrarily ordered so long as each
+thread checks the stopping condition once after their last store to the counter.
+
+At program start, the threads are spawned in the constructor, and the main
+thread broadcasts the \ttt{wake} condition variable after setting
+\ttt{work\_queue} to 0 and \ttt{runnable} and \ttt{num\_total\_tasks} to the
+passed in arguments. Then, the main thread sleeps on \ttt{all\_done} in a while
+loop that checks if all the tasks are done. At this point, the spawned threads
+is either waiting on the \ttt{mutex\_lock} or has fallen through to the point
+where it is sleeping on \ttt{wake}. Once the broadcast is received, all threads
+are active and start grabbing (incrementing) tasks off the work queue.
+
+Once a thread is no longer able to grab any new tasks, that is
+$\ttt{work\_queue} > \ttt{num\_total\_tasks}$, it signals to the main thread that
+it is done via the \ttt{all\_done} condition variable before sleeping on the
+\ttt{wake} condition variable with the \ttt{mutex\_lock}. The main thread checks
+if \tit{all} tasks are done, since some threads may still be running their
+tasks. If this is not the case, it goes back to sleep. If it is, it resets the
+run variables before returning. Now, when a second call to run happens, all
+individual threads should be waiting on \ttt{wake}.
+% \lstinputlisting[linerange={48-73}]{part_a/tasksys.cpp}
+
+\section{Comparing Implementation Performance}
 
 \end{document}
