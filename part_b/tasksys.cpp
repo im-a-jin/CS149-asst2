@@ -384,18 +384,14 @@ WorkUnit TaskGraph::getNextWorkUnitInner() {
         wu.runnable = tg_wu.runnable;
 
         // Increment graph subtask_id
-        int add_lo = tg_wu.num_subtasks_to_run / 2;
-        if (add_lo == 0) {
-            add_lo = 1;
+        for (int i = 0; i < wu.num_subtasks_to_run; i++) {
+            // Alternate between lo and hi
+            if (i % 2 == 0) {
+                tg_wu.subtask_id_lo++;
+            } else {
+                tg_wu.subtask_id_hi--;
+            }
         }
-        // For odd subtask counts, alternate between adding to lo and hi
-        if (tg_wu.num_subtasks_to_run % 2 == 1) {
-            if (tg_wu.subtask_id_lo % 2 == 0 && tg_wu.subtask_id_hi % 2 == 0) {
-                add_lo++;
-            } // add_hi is implicit
-        }
-        tg_wu.subtask_id_lo += add_lo;
-        tg_wu.subtask_id_hi -= tg_wu.num_subtasks_to_run - add_lo;
 
         // Pop task from ready tasks if we just assigned the last subtask
         int n_assigned = tg_wu.subtask_id_lo + (tg_wu.num_total_tasks - (tg_wu.subtask_id_hi+1));
