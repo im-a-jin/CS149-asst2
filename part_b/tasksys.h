@@ -5,27 +5,38 @@
 #include <vector>
 #include <queue>
 
-typedef struct TaskGraphNode TaskGraphNode;
+typedef class TaskGraphNode TaskGraphNode;
 
 struct TaskArgsB {
     int thread_id;                              // thread id
     int num_threads;                            // total number of threads
     bool *done;                                 // true if destructor called
-    std::queue<TaskGraphNode> *work_queue;    // task_id counter
-    std::vector<TaskGraphNode> *task_graph;     // task_id counter
+    std::queue<TaskGraphNode *> *work_queue;    // task_id counter
+    std::vector<TaskGraphNode *> *task_graph;   // task_id counter
     pthread_mutex_t *wq_lock;                   // task worker lock
     pthread_mutex_t *tg_lock;                   // task worker lock
     pthread_cond_t *wake;                       // thread sleep/done condition variable
     pthread_cond_t *all_done;                   // thread completed 
 };
 
-struct TaskGraphNode {
-    int node_id;
-    int task_id;
-    IRunnable *runnable;
-    int num_total_tasks;
-    int num_deps;
-    std::vector<TaskID> deps_out;
+class TaskGraphNode {
+    public:
+        int node_id;
+        int task_id;
+        std::atomic<int> tasks_done;
+        IRunnable *runnable;
+        int num_total_tasks;
+        int num_deps;
+        std::vector<TaskID> deps_out;
+
+        TaskGraphNode(int node_id, IRunnable *runnable, int num_total_tasks) {
+            this->node_id = node_id;
+            this->task_id = 0;
+            this->tasks_done = 0;
+            this->runnable = runnable;
+            this->num_total_tasks = num_total_tasks;
+            this->num_deps = 0;
+        }
 };
 
 /*
@@ -86,8 +97,8 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
  */
 class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
     private:
-        std::queue<TaskGraphNode> _work_queue;
-        std::vector<TaskGraphNode> _task_graph;
+        std::queue<TaskGraphNode *> _work_queue;
+        std::vector<TaskGraphNode *> _task_graph;
         pthread_mutex_t _wq_lock;
         pthread_mutex_t _tg_lock;
         pthread_cond_t _wake;

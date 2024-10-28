@@ -124,20 +124,30 @@ void TaskSystemParallelThreadPoolSpinning::sync() {
 
 void *runTaskWrapperB(void *args) {
     TaskArgsB *taskArgs = (TaskArgsB *) args;
-    TaskGraphNode cur_task;
-    bool tasks_done;
+    TaskGraphNode *cur_task;
 
     while (!*(taskArgs->done)) {
-        tasks_done = false;
         pthread_mutex_lock(taskArgs->wq_lock);
         if (!taskArgs->work_queue->empty()) {
             cur_task = taskArgs->work_queue->front();
-            if ((taskArgs->work_queue->front()).task_id++ == cur_task.num_total_tasks-1) {
+            if (cur_task->task_id++ == cur_task->num_total_tasks-1) {
                 taskArgs->work_queue->pop();
-                tasks_done = true;
             }
             pthread_mutex_unlock(taskArgs->wq_lock);
-            cur_task.runnable->runTask(cur_task.task_id, cur_task.num_total_tasks);
+            cur_task->runnable->runTask(cur_task->task_id, cur_task->num_total_tasks);
+
+            if (cur_task->tasks_done.fetch_add(1, std::memory_order_relaxed) == cur_task->num_total_tasks-1) {
+                pthread_mutex_lock(taskArgs->tg_lock);
+                for (TaskID id : cur_task->deps_out) {
+                    if (--(*(taskArgs->task_graph))[id]->num_deps == 0) {
+                        pthread_mutex_lock(taskArgs->wq_lock);
+                        taskArgs->work_queue->push((*(taskArgs->task_graph))[id]);
+                        pthread_cond_broadcast(taskArgs->wake);
+                        pthread_mutex_unlock(taskArgs->wq_lock);
+                    }
+                }
+                pthread_mutex_unlock(taskArgs->tg_lock);
+            }
         } else {
             pthread_cond_signal(taskArgs->all_done);
             if (*(taskArgs->done)) {
@@ -146,18 +156,6 @@ void *runTaskWrapperB(void *args) {
             }
             pthread_cond_wait(taskArgs->wake, taskArgs->wq_lock);
             pthread_mutex_unlock(taskArgs->wq_lock);
-        }
-
-        if (tasks_done) {
-            pthread_mutex_lock(taskArgs->tg_lock);
-            for (TaskID id : (*(taskArgs->task_graph))[cur_task.node_id].deps_out) {
-                if (--(*(taskArgs->task_graph))[id].num_deps == 0) {
-                    pthread_mutex_lock(taskArgs->wq_lock);
-                    taskArgs->work_queue->push((*(taskArgs->task_graph))[id]);
-                    pthread_mutex_unlock(taskArgs->wq_lock);
-                }
-            }
-            pthread_mutex_unlock(taskArgs->tg_lock);
         }
     }
 
@@ -215,6 +213,10 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     pthread_cond_broadcast(&_wake);
     pthread_mutex_unlock(&_wq_lock);
 
+    for (TaskGraphNode *tgn : _task_graph) {
+        delete tgn;
+    }
+
     // Join threads
     for (int i = 0; i < _num_threads; i++) {
         pthread_join(_thread_pool[i], NULL);
@@ -260,19 +262,17 @@ void TaskSystemParallelThreadPoolSleeping::sync() {
 
 TaskID TaskSystemParallelThreadPoolSleeping::addTask(IRunnable* runnable, int num_total_tasks, const std::vector<TaskID>& deps) {
     TaskID node_id = _task_graph.size();
-    TaskGraphNode tgn = {
-        node_id, 0, runnable, num_total_tasks, 0, std::vector<TaskID>()
-    };
+    TaskGraphNode *tgn = new TaskGraphNode(node_id, runnable, num_total_tasks);
 
     pthread_mutex_lock(&_tg_lock);
     for (TaskID id : deps) {
-        tgn.num_deps += int(_task_graph[id].task_id < _task_graph[id].num_total_tasks);
-        _task_graph[id].deps_out.push_back(node_id);
+        tgn->num_deps += int(_task_graph[id]->tasks_done < _task_graph[id]->num_total_tasks);
+        _task_graph[id]->deps_out.push_back(node_id);
     }
     _task_graph.push_back(tgn);
     pthread_mutex_unlock(&_tg_lock);
 
-    if (tgn.num_deps == 0) {
+    if (tgn->num_deps == 0) {
         pthread_mutex_lock(&_wq_lock);
         _work_queue.push(tgn);
         pthread_cond_broadcast(&_wake);
@@ -288,8 +288,8 @@ void TaskSystemParallelThreadPoolSleeping::blockUntilDone() {
     pthread_mutex_lock(&_tg_lock);
     while (!_done) {
         run_complete = true;
-        for (TaskGraphNode tgn : _task_graph) {
-            run_complete &= tgn.task_id == tgn.num_total_tasks;
+        for (TaskGraphNode *tgn : _task_graph) {
+            run_complete &= tgn->tasks_done == tgn->num_total_tasks;
         }
         if (run_complete) {
             break;
