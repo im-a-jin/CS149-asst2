@@ -152,15 +152,16 @@ void *runTaskWrapperB(void *args) {
                 for (TaskID id : ids) {
                     taskArgs->work_queue->push((*(taskArgs->task_graph))[id]);
                 }
-                pthread_cond_broadcast(taskArgs->wake);
                 pthread_mutex_unlock(taskArgs->wq_lock);
+                pthread_cond_broadcast(taskArgs->wake);
             }
         } else {
+            pthread_mutex_unlock(taskArgs->wq_lock);
             pthread_cond_signal(taskArgs->all_done);
             if (*(taskArgs->done)) {
-              pthread_mutex_unlock(taskArgs->wq_lock);
               return NULL;
             }
+            pthread_mutex_lock(taskArgs->wq_lock);
             pthread_cond_wait(taskArgs->wake, taskArgs->wq_lock);
             pthread_mutex_unlock(taskArgs->wq_lock);
         }
@@ -217,8 +218,8 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     //
     pthread_mutex_lock(&_wq_lock);
     *_done = true;
-    pthread_cond_broadcast(&_wake);
     pthread_mutex_unlock(&_wq_lock);
+    pthread_cond_broadcast(&_wake);
 
     for (TaskGraphNode *tgn : _task_graph) {
         delete tgn;
@@ -283,8 +284,8 @@ TaskID TaskSystemParallelThreadPoolSleeping::addTask(IRunnable* runnable, int nu
     if (tgn->num_deps == 0) {
         pthread_mutex_lock(&_wq_lock);
         _work_queue.push(tgn);
-        pthread_cond_broadcast(&_wake);
         pthread_mutex_unlock(&_wq_lock);
+        pthread_cond_broadcast(&_wake);
     }
 
     return node_id;
