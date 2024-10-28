@@ -2,19 +2,30 @@
 #define _TASKSYS_H
 
 #include "itasksys.h"
+#include <vector>
+#include <queue>
+
+typedef struct TaskGraphNode TaskGraphNode;
 
 struct TaskArgsB {
-    int thread_id;                  // thread id
-    int num_threads;                // total number of threads
-    bool *done;                     // true if destructor called, false otherwise
-    int *work_queue;                // task_id counter
-    pthread_mutex_t *mutex_lock;    // shared mutex lock
-    pthread_mutex_t *thread_lock;   // thread wait locks
-    pthread_cond_t *wake;           // thread sleep/done condition variable
-    pthread_cond_t *all_done;       // thread completed 
-    std::atomic<int> *tasks_done;   // counter for tasks done
-    IRunnable **runnable;           // pointer to runnable object
-    int *num_total_tasks;           // total number of tasks
+    int thread_id;                              // thread id
+    int num_threads;                            // total number of threads
+    bool *done;                                 // true if destructor called
+    std::queue<TaskGraphNode> *work_queue;    // task_id counter
+    std::vector<TaskGraphNode> *task_graph;     // task_id counter
+    pthread_mutex_t *wq_lock;                   // task worker lock
+    pthread_mutex_t *tg_lock;                   // task worker lock
+    pthread_cond_t *wake;                       // thread sleep/done condition variable
+    pthread_cond_t *all_done;                   // thread completed 
+};
+
+struct TaskGraphNode {
+    int node_id;
+    int task_id;
+    IRunnable *runnable;
+    int num_total_tasks;
+    int num_deps;
+    std::vector<TaskID> deps_out;
 };
 
 /*
@@ -40,20 +51,6 @@ class TaskSystemSerial: public ITaskSystem {
  * of the ITaskSystem interface.
  */
 class TaskSystemParallelSpawn: public ITaskSystem {
-    private:
-        int _work_queue;
-        pthread_mutex_t _mutex_lock;
-        pthread_mutex_t *_thread_locks;
-        pthread_cond_t _wake;
-        pthread_cond_t _all_done;
-        bool *_done;
-        TaskArgsA3 *_args;
-        pthread_t *_thread_pool;
-        int _num_threads;
-        std::atomic<int> _tasks_done;
-        IRunnable *_runnable;
-        int _num_total_tasks;
-
     public:
         TaskSystemParallelSpawn(int num_threads);
         ~TaskSystemParallelSpawn();
@@ -88,6 +85,18 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
  * itasksys.h for documentation of the ITaskSystem interface.
  */
 class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
+    private:
+        std::queue<TaskGraphNode> _work_queue;
+        std::vector<TaskGraphNode> _task_graph;
+        pthread_mutex_t _wq_lock;
+        pthread_mutex_t _tg_lock;
+        pthread_cond_t _wake;
+        pthread_cond_t _all_done;
+        bool *_done;
+        TaskArgsB *_args;
+        pthread_t *_thread_pool;
+        int _num_threads;
+
     public:
         TaskSystemParallelThreadPoolSleeping(int num_threads);
         ~TaskSystemParallelThreadPoolSleeping();
@@ -96,6 +105,8 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         TaskID runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
                                 const std::vector<TaskID>& deps);
         void sync();
+        TaskID addTask(IRunnable* runnable, int num_total_tasks, const std::vector<TaskID>& deps);
+        void blockUntilDone();
 };
 
 #endif
