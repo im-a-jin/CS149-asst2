@@ -1,3 +1,4 @@
 objs/
-runtasks*
+runtasks
+runtasks.*
 .vscode/

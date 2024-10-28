@@ -2,12 +2,45 @@
 #define _TASKSYS_H
 
 #include "itasksys.h"
-#include <unordered_map>
-#include <cassert>
-#include <climits>
-#include "pthread.h"
 #include "stdlib.h"
+#include "pthread.h"
+#include <vector>
+#include <queue>
+#include <atomic>
 
+typedef class TaskGraphNode TaskGraphNode;
+
+struct TaskArgsB {
+    int thread_id;                              // thread id
+    int num_threads;                            // total number of threads
+    bool *done;                                 // true if destructor called
+    std::queue<TaskGraphNode *> *work_queue;    // task_id counter
+    std::vector<TaskGraphNode *> *task_graph;   // task_id counter
+    pthread_mutex_t *wq_lock;                   // task worker lock
+    pthread_mutex_t *tg_lock;                   // task worker lock
+    pthread_cond_t *wake;                       // thread sleep/done condition variable
+    pthread_cond_t *all_done;                   // thread completed 
+};
+
+class TaskGraphNode {
+    public:
+        int node_id;
+        int task_id;
+        std::atomic<int> tasks_done;
+        IRunnable *runnable;
+        int num_total_tasks;
+        int num_deps;
+        std::vector<TaskID> deps_out;
+
+        TaskGraphNode(int node_id, IRunnable *runnable, int num_total_tasks) {
+            this->node_id = node_id;
+            this->task_id = 0;
+            this->tasks_done = 0;
+            this->runnable = runnable;
+            this->num_total_tasks = num_total_tasks;
+            this->num_deps = 0;
+        }
+};
 
 /*
  * TaskSystemSerial: This class is the student's implementation of a
@@ -60,95 +93,6 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
 };
 
 
-
-
-struct WorkUnit {
-    TaskID task_id; // -1 if no work to do
-    int subtask_id_lo; // Invariant: Holds next unassigned subtask_id from 0
-    int subtask_id_hi; // Invariant: Holds next unassigned subtask_id from top
-    int num_subtasks_to_run; // May want to run >1 subtasks at a time
-    int num_total_tasks;
-    IRunnable* runnable;
-};
-
-struct TaskGraphNode {
-    WorkUnit work_unit;
-    std::vector<TaskID> dependents; // Tasks that depend on me
-    int n_dependencies; // Tasks that I depend on
-    int n_subtasks_done;
-    bool done;
-};
-
-struct WorkerArgsB;
-
-/*
- * TaskGraph: This class handles the task graph which underlies
- * TaskSystemParallelThreadPoolSleeping.
- * 
- * All public operations acquire _tg_lock and release when done.
- * Private operations assume lock is in place.
- */
-class TaskGraph {
-    public:
-        // Basics
-        TaskGraph();
-        ~TaskGraph();
-
-        // Configure number of workers to chunk work for
-        int n_workers; 
-
-        // Adding always broadcasts
-        TaskID addTask(IRunnable* runnable, int num_total_tasks,
-                                const std::vector<TaskID>& deps,
-                                int n_workers, WorkerArgsB *worker_args);
-
-        // Mark current unit of work done, return next unit of work, if any
-        WorkUnit markCompleteGetNext(WorkUnit wu, pthread_mutex_t *worker_lock, bool *idle_flag);
-
-        // Either returns sync or cond_waits
-        WorkUnit getStarterWorkUnit(pthread_mutex_t *worker_lock, pthread_cond_t *worker_inbox,
-            bool *idle_flag, WorkUnit *wu_mailbox);
-
-        // Consumers use this to listen for done state (sync)
-        void blockUntilEmpty();
-
-        // Called by main to get all workers to return
-        void shutdown(WorkerArgsB *worker_args);
-
-    private:
-        int _task_id_counter;
-        int _completed_tasks_counter;
-
-        // Internal graph storage object
-        //std::unordered_map<TaskID, TaskGraphNode> _task_graph;
-        std::vector<TaskGraphNode> _task_graph;
-
-        // Push tasks on back, pop from front
-        // Invariant: Tasks popped as soon as the last subtask is assigned
-        std::vector<TaskID> _ready_tasks; 
-        int _rt_n_done; // Number of tasks done in ready_tasks
-
-        // Assumes lock is in place
-        WorkUnit getNextWorkUnitInner(); 
-
-        // Locks, conditions
-        pthread_mutex_t _tg_lock; // Must have this to update tg in any way
-        pthread_cond_t _task_received; // If there's no work, idle threads subscribe to this and wait for broadcast
-        pthread_cond_t _all_tasks_done; // For sync call
-
-};
-
-struct WorkerArgsB {
-    TaskGraph *tg;
-    int thread_id;
-    pthread_mutex_t worker_mutex;
-    pthread_cond_t worker_inbox;
-    bool is_idle; // Invariant: Only change if holding worker_mutex
-    WorkUnit wu_mailbox; // Invariant: Only change if holding worker_mutex
-};
-
-void* threadWorkerB(void *args);
-
 /*
  * TaskSystemParallelThreadPoolSleeping: This class is the student's
  * optimized implementation of a parallel task execution engine that uses
@@ -156,6 +100,18 @@ void* threadWorkerB(void *args);
  * itasksys.h for documentation of the ITaskSystem interface.
  */
 class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
+    private:
+        std::queue<TaskGraphNode *> _work_queue;
+        std::vector<TaskGraphNode *> _task_graph;
+        pthread_mutex_t _wq_lock;
+        pthread_mutex_t _tg_lock;
+        pthread_cond_t _wake;
+        pthread_cond_t _all_done;
+        bool *_done;
+        TaskArgsB *_args;
+        pthread_t *_thread_pool;
+        int _num_threads;
+
     public:
         TaskSystemParallelThreadPoolSleeping(int num_threads);
         ~TaskSystemParallelThreadPoolSleeping();
@@ -164,15 +120,8 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         TaskID runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
                                 const std::vector<TaskID>& deps);
         void sync();
-
-    private:
-        TaskGraph _tg;
-        pthread_t * _thread_pool;
-        int _num_threads;
-        WorkerArgsB *_worker_args;
-
-
-
+        TaskID addTask(IRunnable* runnable, int num_total_tasks, const std::vector<TaskID>& deps);
+        void blockUntilDone();
 };
 
 #endif
