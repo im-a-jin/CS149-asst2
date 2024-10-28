@@ -4,19 +4,154 @@
 
 \begin{document}
 
+\lstset{language=C++,basicstyle=\footnotesize\ttfamily,breaklines=true}
+
 \fancyhf{}
-\fancyhead[R]{Matthew Jin (mjin2002), Derek Chong (derekch)}
+\fancyhead[R]{Derek Chong (derekch), Matthew Jin (mjin2002)}
 \setlength{\headheight}{14pt}
 \pagestyle{fancy}
 
 \centerline{\Large CS 149: Programming Assignment 2}
 \centerline{Autumn 2024-25}
 
-\section*{Part A: Synchronous Bulk Task Launch}
+\section{Task System Implementation}
 
-\subsection*{Step 1: Move to a Parallel Task System}
+Our task system implementation uses a thread pool to store the active threads.
+Each thread is pointed to a \ttt{runTaskWrapper} function that takes in the
+thread arguments listed below:
+\begin{lstlisting}
+struct TaskArgsA3 {
+    int thread_id;                  // thread id
+    int num_threads;                // total number of threads
+    bool *done;                     // true if destructor called, false otherwise
+    int *work_queue;                // task_id counter
+    pthread_mutex_t *mutex_lock;    // shared mutex lock
+    pthread_cond_t *wake;           // thread sleep/done condition variable
+    pthread_cond_t *all_done;       // thread completed 
+    std::atomic<int> *tasks_done;   // counter for tasks done
+    IRunnable **runnable;           // pointer to runnable object
+    int *num_total_tasks;           // total number of tasks
+};
+\end{lstlisting}
 
-We interleaved the threads, currently use static assignment. Should probably use
-dynamic. No shared variables at the moment.
+For part A, we assign tasks to the workers dynamically using a \ttt{work\_queue}
+counter to keep track of the next available \ttt{task\_id}. Each task grabs the
+next \ttt{task\_id} under the \ttt{mutex\_lock} and increments the counter
+before releasing the lock and running the task. Once a thread is finished
+running a task, it will increment the atomic \ttt{tasks\_done} counter by one.
+We use \ttt{std::memory\_order\_relaxed} for its speed since the loads and
+stores across different threads can be arbitrarily ordered so long as each
+thread checks the stopping condition once after their last store to the counter.
+
+At program start, the threads are spawned in the constructor, and the main
+thread broadcasts the \ttt{wake} condition variable after setting
+\ttt{work\_queue} to 0 and \ttt{runnable} and \ttt{num\_total\_tasks}
+correspondingly. Then, the main thread sleeps on \ttt{all\_done} in a while loop
+that checks if all the tasks are done. At this point, the spawned threads is either
+waiting on the \ttt{mutex\_lock} or has fallen through to the point where it is
+sleeping on \ttt{wake}. Once the broadcast is received, all threads are active
+and start grabbing (incrementing) tasks off the work queue.
+
+Once a thread is no longer able to grab any new tasks, that is
+$\ttt{work\_queue} > \ttt{num\_total\_tasks}$, it signals to the main thread
+that it is done via the \ttt{all\_done} condition variable before sleeping on
+the \ttt{wake} condition variable with the \ttt{mutex\_lock}. The main thread
+checks if \tit{all} tasks are done, since some threads may still be running
+their tasks. If this is not the case, it goes back to sleep. If it is, it resets
+the run variables before returning. Now, when a second call to run happens, all
+individual threads will be waiting on \ttt{wake}.
+% \lstinputlisting[linerange={48-73}]{part_a/tasksys.cpp}
+
+\bigskip
+For part B, to ensure correct execution of task graphs, we track dependencies by representing task runs as a directed acyclic graph, and only permitting runs to start when their dependencies have all finished running.
+More specifically, we use a reference counting scheme similar to Kahn's algorithm. 
+Each run maintains: 
+
+\begin{itemize}
+    \item A list of pointers to runs which depend on it, i.e. the nodes that require this node to be completed before they can start.
+    \item A count of its own dependencies, i.e. the number of other nodes which need to complete before this node can start.
+\end{itemize}
+
+We also maintain a list of Task IDs which are currently permitted to start. To
+keep this list updated, any time a run finishes all of its tasks we iterate
+through all runs which depend on it, and decrement each of their dependency
+counters. If any run's counter is now zero, we add it to the ready list. This
+approach has several nice properties:
+
+\begin{itemize}
+    \item Simple data structure: Only requires a vector to store runs, and a
+      vector of Task IDs.
+    \item Minimal compute overhead: We never need to sweep through all runs.
+      Adding runs only touches previous runs' dependency lists and updates the
+      back of the vector. Tracking completion does not require graph structure
+      updates: it only touches a single counter per dependency, and just once
+      each per bulk run.
+    \item Thread-safety: This approach enables a very small critical section.
+      The only operations that require graph-wide locking are adding runs and
+      Task IDs to their respective vectors (and these operations can also be
+      parallelized if required, e.g. using thread-safe queues). All other
+      operations are local to runs and their immediate neighborhood of
+      dependencies.
+\end{itemize}
+
+\section{Comparing Implementation Performance}
+
+One instance where the serial implementation performs better than any of the
+threaded implementations are for the tests that are very computationally light
+such as \ttt{super\_super\_light} and \ttt{super\_light}. In these cases, the
+overhead for creating threads and have them destroyed/spinning/sleeping becomes
+a non-insignificant part of the runtime.
+
+\medskip
+The spawn-every-launch thread implementation performs as well as the more
+advanced thread pool implementations for tests such as
+\ttt{math\_operations\_in\_tight\_for\_loop\_reduction\_tree} and
+\ttt{recursive\_fibonacci}. These tasks are computationally expensive, so the
+overhead from thread operations has less impact on the overall runtime. In
+addition, these tasks have fewer bulk task launches (\ttt{recursive\_fibonacci}
+has 30, \ttt{math\_operations\_in\_tight\_for\_loop\_reduction\_tree} has 32)
+which means that fewer threads are created and destroyed in the
+spawn-every-launch implementation.
+
+\smallskip
+On the other hand, spawn-every-launch performs worse for
+\ttt{math\_operations\_in\_tight\_for\_loop} and \ttt{ping\_pong\_equal} which
+have 2000 and 400 bulk task launches respectively. Since there are more bulk
+task launches, spawn-every-launch will have to create and destroy more threads,
+leading to more overhead and higher runtime.
+
+\section{Custom Testing}
+
+For Part B, we started with the simplest possible parallelized solution, which
+entailed using a global lock for all graph operations. We observed that this
+resulted in surprising performance dynamics: the sync versions of existing tests
+were running several times faster than the async versions, despite both calling
+the same underlying functions and sync calling \verb|blockuntilEmpty()| after
+every run.
+
+\bigskip
+We created a set of tests to help characterize the source of this
+underperformance. We started by creating a very general test function which
+enabled us to construct many highly varied tests, providing granular control
+over the number of total elements to compute, the number of bulk tasks to break
+this into, whether runs were sync or async, and whether runs were dependent on
+one another. We used \verb|SimpleMultiplyTask| as the underlying task.
+
+\bigskip
+We then wrote multiple test endpoints which each called this function, varying
+function arguments across every dimension in order to isolate their effects on
+performance. In doing so, we ruled out dependency management as the source of
+the performance gap. Our tests with many low-compute runs validated that
+parallelization improved performance even with a global lock: async tests
+exhibited 20-30x speedups over equivalent sync tests. Finally, we identified the
+likely culprit by observing that tests with linear dependencies enabled were
+counterintuitively finishing several times faster than those without
+dependencies. This pointed to lock contention as the source of underperformance,
+most likely between \verb|runAsyncWithDeps()| and graph updates related to task
+completion. (In the process of testing, we also identified and fixed an edge
+case correctness bug).
+
+% TODO: If we manage to break this bottleneck, here is where we should remark on this:
+% Q: Did the result of the test you added cause you to change your assignment implementation?
 
 \end{document}
