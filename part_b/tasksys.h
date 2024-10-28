@@ -2,9 +2,11 @@
 #define _TASKSYS_H
 
 #include "itasksys.h"
+#include "stdlib.h"
 #include "pthread.h"
 #include <vector>
 #include <queue>
+#include <atomic>
 
 typedef class TaskGraphNode TaskGraphNode;
 
