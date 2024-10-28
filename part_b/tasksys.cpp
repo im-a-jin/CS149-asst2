@@ -125,28 +125,36 @@ void TaskSystemParallelThreadPoolSpinning::sync() {
 void *runTaskWrapperB(void *args) {
     TaskArgsB *taskArgs = (TaskArgsB *) args;
     TaskGraphNode *cur_task;
+    int task_id;
 
     while (!*(taskArgs->done)) {
         pthread_mutex_lock(taskArgs->wq_lock);
         if (!taskArgs->work_queue->empty()) {
             cur_task = taskArgs->work_queue->front();
+            task_id = cur_task->task_id;
             if (cur_task->task_id++ == cur_task->num_total_tasks-1) {
                 taskArgs->work_queue->pop();
             }
             pthread_mutex_unlock(taskArgs->wq_lock);
-            cur_task->runnable->runTask(cur_task->task_id, cur_task->num_total_tasks);
+            cur_task->runnable->runTask(task_id, cur_task->num_total_tasks);
 
             if (cur_task->tasks_done.fetch_add(1, std::memory_order_relaxed) == cur_task->num_total_tasks-1) {
+                std::vector<TaskID> ids;
                 pthread_mutex_lock(taskArgs->tg_lock);
                 for (TaskID id : cur_task->deps_out) {
                     if (--(*(taskArgs->task_graph))[id]->num_deps == 0) {
-                        pthread_mutex_lock(taskArgs->wq_lock);
-                        taskArgs->work_queue->push((*(taskArgs->task_graph))[id]);
-                        pthread_cond_broadcast(taskArgs->wake);
-                        pthread_mutex_unlock(taskArgs->wq_lock);
+                        ids.push_back(id);
                     }
                 }
+                pthread_cond_signal(taskArgs->all_done);
                 pthread_mutex_unlock(taskArgs->tg_lock);
+                
+                pthread_mutex_lock(taskArgs->wq_lock);
+                for (TaskID id : ids) {
+                    taskArgs->work_queue->push((*(taskArgs->task_graph))[id]);
+                }
+                pthread_cond_broadcast(taskArgs->wake);
+                pthread_mutex_unlock(taskArgs->wq_lock);
             }
         } else {
             pthread_cond_signal(taskArgs->all_done);
@@ -263,6 +271,7 @@ void TaskSystemParallelThreadPoolSleeping::sync() {
 TaskID TaskSystemParallelThreadPoolSleeping::addTask(IRunnable* runnable, int num_total_tasks, const std::vector<TaskID>& deps) {
     TaskID node_id = _task_graph.size();
     TaskGraphNode *tgn = new TaskGraphNode(node_id, runnable, num_total_tasks);
+    tgn->num_deps = 0;
 
     pthread_mutex_lock(&_tg_lock);
     for (TaskID id : deps) {
@@ -286,7 +295,7 @@ void TaskSystemParallelThreadPoolSleeping::blockUntilDone() {
     bool run_complete = false;
 
     pthread_mutex_lock(&_tg_lock);
-    while (!_done) {
+    while (!(*_done)) {
         run_complete = true;
         for (TaskGraphNode *tgn : _task_graph) {
             run_complete &= tgn->tasks_done == tgn->num_total_tasks;
