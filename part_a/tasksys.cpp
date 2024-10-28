@@ -57,12 +57,10 @@ void * runTaskWrapperA3(void * args) {
             (*(taskArgs->runnable))->runTask(cur_task, *(taskArgs->num_total_tasks));
             taskArgs->tasks_done->fetch_add(1, std::memory_order_relaxed);
         } else {
-            pthread_mutex_unlock(taskArgs->mutex_lock);
             pthread_cond_signal(taskArgs->all_done);
             if (*(taskArgs->done)) {
               return NULL;
             }
-            pthread_mutex_lock(taskArgs->mutex_lock);
             pthread_cond_wait(taskArgs->wake, taskArgs->mutex_lock);
             pthread_mutex_unlock(taskArgs->mutex_lock);
         }

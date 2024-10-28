@@ -156,12 +156,10 @@ void *runTaskWrapperB(void *args) {
                 pthread_cond_broadcast(taskArgs->wake);
             }
         } else {
-            pthread_mutex_unlock(taskArgs->wq_lock);
             pthread_cond_signal(taskArgs->all_done);
             if (*(taskArgs->done)) {
               return NULL;
             }
-            pthread_mutex_lock(taskArgs->wq_lock);
             pthread_cond_wait(taskArgs->wake, taskArgs->wq_lock);
             pthread_mutex_unlock(taskArgs->wq_lock);
         }
