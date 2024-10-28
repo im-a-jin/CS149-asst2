@@ -146,7 +146,6 @@ void *runTaskWrapperB(void *args) {
                         ids.push_back(id);
                     }
                 }
-                pthread_cond_signal(taskArgs->all_done);
                 pthread_mutex_unlock(taskArgs->tg_lock);
                 
                 pthread_mutex_lock(taskArgs->wq_lock);

@@ -14,23 +14,24 @@ struct TaskArgsB {
     int thread_id;                              // thread id
     int num_threads;                            // total number of threads
     bool *done;                                 // true if destructor called
-    std::queue<TaskGraphNode *> *work_queue;    // task_id counter
-    std::vector<TaskGraphNode *> *task_graph;   // task_id counter
-    pthread_mutex_t *wq_lock;                   // task worker lock
-    pthread_mutex_t *tg_lock;                   // task worker lock
-    pthread_cond_t *wake;                       // thread sleep/done condition variable
-    pthread_cond_t *all_done;                   // thread completed 
+    std::queue<TaskGraphNode *> *work_queue;    // work queue
+    std::vector<TaskGraphNode *> *task_graph;   // task graph
+    pthread_mutex_t *wq_lock;                   // work queue lock
+    pthread_mutex_t *tg_lock;                   // task graph lock
+    pthread_cond_t *wake;                       // thread sleep condition variable
+    pthread_cond_t *all_done;                   // thread completed (queue empty)
 };
 
 class TaskGraphNode {
     public:
-        int node_id;
-        int task_id;
-        std::atomic<int> tasks_done;
-        IRunnable *runnable;
-        int num_total_tasks;
-        int num_deps;
-        std::vector<TaskID> deps_out;
+        int node_id;                            // bulk task (node) ID
+        int task_id;                            // task ID counter
+        std::atomic<int> tasks_done;            // tasks done counter
+        IRunnable *runnable;                    // task runnable
+        int num_total_tasks;                    // number of total tasks
+        int num_deps;                           // number of incoming deps
+        std::vector<TaskID> deps_out;           // list of bulk tasks (nodes)
+                                                // that depend on this task
 
         TaskGraphNode(int node_id, IRunnable *runnable, int num_total_tasks) {
             this->node_id = node_id;
