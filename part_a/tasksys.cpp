@@ -59,7 +59,8 @@ void * runTaskWrapperA3(void * args) {
         } else {
             pthread_cond_signal(taskArgs->all_done);
             if (*(taskArgs->done)) {
-              return NULL;
+                pthread_mutex_unlock(taskArgs->mutex_lock);
+                return NULL;
             }
             pthread_cond_wait(taskArgs->wake, taskArgs->mutex_lock);
             pthread_mutex_unlock(taskArgs->mutex_lock);
